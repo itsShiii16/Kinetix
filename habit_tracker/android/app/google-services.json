@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "18075609650",
+    "project_id": "kinetix-8a059",
+    "storage_bucket": "kinetix-8a059.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:18075609650:android:896f35d3eb610134ebaa2b",
+        "android_client_info": {
+          "package_name": "com.example.habit_tracker"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDiYPhvxXk8Kb7WRWFY4JMXLWMClLXMxoM"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
