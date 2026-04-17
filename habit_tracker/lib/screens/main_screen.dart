@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'calendar_screen.dart';
 
 class MainScreen extends StatefulWidget {
   const MainScreen({super.key});
@@ -434,7 +435,18 @@ class _MainScreenState extends State<MainScreen> {
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
             Icon(Icons.home_rounded, color: primaryColor, size: 32, shadows: [Shadow(color: primaryColor.withOpacity(0.6), blurRadius: 8)]),
-            Icon(Icons.calendar_month_rounded, color: mutedTextColor, size: 28),
+            
+            // Replaced static Icon with GestureDetector for navigation
+            GestureDetector(
+              onTap: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (context) => const CalendarScreen()),
+                );
+              },
+              child: Icon(Icons.calendar_month_rounded, color: mutedTextColor, size: 28),
+            ),
+            
             Icon(Icons.bar_chart_rounded, color: mutedTextColor, size: 28),
             Icon(Icons.settings_rounded, color: mutedTextColor, size: 28),
           ],
