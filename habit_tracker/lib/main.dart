@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'firebase_options.dart';
+import 'package:habit_tracker/screens/auth_screen.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -16,15 +17,13 @@ class HabitTrackerApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Kinetix',
+      title: 'Kinetix', // Your custom project name
+      debugShowCheckedModeBanner: false, // Hides the red debug banner
       theme: ThemeData(
         brightness: Brightness.dark,
         scaffoldBackgroundColor: const Color(0xFF151515), // Deep dark gray
-        // You'll configure the neon accents here later
       ),
-      home: const Scaffold(
-        body: Center(child: Text("Firebase Initialized!")),
-      ),
+      home: const AuthScreen(),
     );
   }
 }
