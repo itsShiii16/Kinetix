@@ -11,6 +11,14 @@ class TaskModel {
   final bool isDone;
   final bool isPriority;
   final bool isDeleted;
+
+  // NEW FIELDS
+  final List<String> repeatDays; // ['M','T','W','Th','F','Sa','Su']
+  final bool remindersEnabled;
+  final List<String> reminders; // ['09:00 AM', '06:30 PM']
+  final String? startDate; // yyyy-mm-dd
+  final String? endDate; // yyyy-mm-dd or null
+
   final IconData icon;
   final Color color;
 
@@ -24,7 +32,12 @@ class TaskModel {
     this.total,
     required this.isDone,
     required this.isPriority,
-    required this.isDeleted,
+    this.isDeleted = false,
+    this.repeatDays = const [],
+    this.remindersEnabled = false,
+    this.reminders = const [],
+    this.startDate,
+    this.endDate,
     required this.icon,
     required this.color,
   });
@@ -40,6 +53,11 @@ class TaskModel {
     bool? isDone,
     bool? isPriority,
     bool? isDeleted,
+    List<String>? repeatDays,
+    bool? remindersEnabled,
+    List<String>? reminders,
+    String? startDate,
+    String? endDate,
     IconData? icon,
     Color? color,
   }) {
@@ -54,6 +72,11 @@ class TaskModel {
       isDone: isDone ?? this.isDone,
       isPriority: isPriority ?? this.isPriority,
       isDeleted: isDeleted ?? this.isDeleted,
+      repeatDays: repeatDays ?? this.repeatDays,
+      remindersEnabled: remindersEnabled ?? this.remindersEnabled,
+      reminders: reminders ?? this.reminders,
+      startDate: startDate ?? this.startDate,
+      endDate: endDate ?? this.endDate,
       icon: icon ?? this.icon,
       color: color ?? this.color,
     );
@@ -73,6 +96,15 @@ class TaskModel {
       isDone: map['isDone'] ?? false,
       isPriority: map['isPriority'] ?? false,
       isDeleted: map['isDeleted'] ?? false,
+      repeatDays: map['repeatDays'] != null
+          ? List<String>.from(map['repeatDays'])
+          : [],
+      remindersEnabled: map['remindersEnabled'] ?? false,
+      reminders: map['reminders'] != null
+          ? List<String>.from(map['reminders'])
+          : [],
+      startDate: map['startDate']?.toString(),
+      endDate: map['endDate']?.toString(),
       icon: _iconFromCategory(category),
       color: _colorFromCategory(category),
     );
@@ -89,6 +121,11 @@ class TaskModel {
       'isDone': isDone,
       'isPriority': isPriority,
       'isDeleted': isDeleted,
+      'repeatDays': repeatDays,
+      'remindersEnabled': remindersEnabled,
+      'reminders': reminders,
+      'startDate': startDate,
+      'endDate': endDate,
     };
   }
 

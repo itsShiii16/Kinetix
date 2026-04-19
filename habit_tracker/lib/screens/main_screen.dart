@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
-import '../data/dummy_tasks.dart';
 import '../models/task_model.dart';
+import '../services/task_service.dart';
 import '../utils/app_colors.dart';
 import '../widgets/main_screen/category_tabs.dart';
 import '../widgets/main_screen/main_header.dart';
@@ -20,16 +20,10 @@ class MainScreen extends StatefulWidget {
 
 class _MainScreenState extends State<MainScreen> {
   final TextEditingController _searchController = TextEditingController();
+  final TaskService _taskService = TaskService();
 
-  late List<TaskModel> _tasks;
   TaskCategoryTab _selectedTab = TaskCategoryTab.all;
   String _searchQuery = '';
-
-  @override
-  void initState() {
-    super.initState();
-    _tasks = List<TaskModel>.from(DummyTasks.tasks);
-  }
 
   @override
   void dispose() {
@@ -37,58 +31,38 @@ class _MainScreenState extends State<MainScreen> {
     super.dispose();
   }
 
-  int get completedTasks => _tasks.where((task) => task.isDone).length;
-
-  int get totalTasks => _tasks.length;
-
-  List<TaskModel> get priorityTasks =>
-      _tasks.where((task) => task.isPriority).toList();
-
   String get selectedCategoryLabel => CategoryTabs.labelFor(_selectedTab);
 
-  List<TaskModel> get filteredTasks {
-    List<TaskModel> tasks = List.from(_tasks);
+  List<TaskModel> _filterTasks(List<TaskModel> tasks) {
+    List<TaskModel> filtered = List.from(tasks);
 
     if (_selectedTab != TaskCategoryTab.all) {
-      tasks = tasks
-          .where(
-            (task) =>
-                task.category.toLowerCase() ==
-                selectedCategoryLabel.toLowerCase(),
-          )
+      filtered = filtered
+          .where((task) =>
+              task.category.toLowerCase() ==
+              selectedCategoryLabel.toLowerCase())
           .toList();
     }
 
     if (_searchQuery.trim().isNotEmpty) {
       final query = _searchQuery.toLowerCase();
-      tasks = tasks.where((task) {
+      filtered = filtered.where((task) {
         return task.title.toLowerCase().contains(query) ||
             task.subtitle.toLowerCase().contains(query) ||
             task.category.toLowerCase().contains(query);
       }).toList();
     }
 
-    tasks.sort((a, b) {
-      if (a.isDone != b.isDone) return a.isDone ? 1 : -1;
-      if (a.isPriority != b.isPriority) return a.isPriority ? -1 : 1;
-      return 0;
-    });
-
-    return tasks;
+    return filtered;
   }
 
-  void _toggleTask(TaskModel task) {
-    setState(() {
-      final index = _tasks.indexWhere((t) => t.id == task.id);
-      if (index != -1) {
-        _tasks[index] = _tasks[index].copyWith(isDone: !_tasks[index].isDone);
-      }
-    });
+  Future<void> _toggleTask(TaskModel task) async {
+    await _taskService.toggleTaskCompletion(task);
   }
 
   void _showAddTaskPlaceholder() {
     ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Add task flow coming next.')),
+      const SnackBar(content: Text('Add task UI next step')),
     );
   }
 
@@ -103,70 +77,95 @@ class _MainScreenState extends State<MainScreen> {
         child: Icon(Icons.add_rounded, color: AppColors.bg, size: 28),
       ),
       body: SafeArea(
-        child: CustomScrollView(
-          physics: const BouncingScrollPhysics(),
-          slivers: [
-            SliverToBoxAdapter(
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(24, 28, 24, 0),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    MainHeader(date: DateTime.now()),
-                    const SizedBox(height: 24),
-                    OverviewCard(
-                      completedTasks: completedTasks,
-                      totalTasks: totalTasks,
-                    ),
-                    const SizedBox(height: 20),
-                    _buildSearchBar(),
-                    const SizedBox(height: 20),
-                    _buildSectionTitle('Today Focus'),
-                    const SizedBox(height: 14),
-                    PriorityTaskGrid(
-                      tasks: priorityTasks,
-                      onTaskTap: (task) => () => _toggleTask(task),
-                    ),
-                    const SizedBox(height: 28),
-                    _buildSectionTitle('Task Groups'),
-                    const SizedBox(height: 14),
-                    CategoryTabs(
-                      selectedTab: _selectedTab,
-                      onTabSelected: (tab) {
-                        setState(() {
-                          _selectedTab = tab;
-                        });
-                      },
-                    ),
-                    const SizedBox(height: 20),
-                    _buildTaskListHeader(),
-                    const SizedBox(height: 14),
-                  ],
-                ),
-              ),
-            ),
-            filteredTasks.isEmpty
-                ? SliverToBoxAdapter(
-                    child: Padding(
-                      padding: const EdgeInsets.fromLTRB(24, 0, 24, 140),
-                      child: _buildEmptyState(),
-                    ),
-                  )
-                : SliverPadding(
-                    padding: const EdgeInsets.fromLTRB(24, 0, 24, 140),
-                    sliver: SliverList.separated(
-                      itemCount: filteredTasks.length,
-                      separatorBuilder: (_, __) => const SizedBox(height: 12),
-                      itemBuilder: (context, index) {
-                        final task = filteredTasks[index];
-                        return TaskCard(
-                          task: task,
-                          onTap: () => _toggleTask(task),
-                        );
-                      },
+        child: StreamBuilder<List<TaskModel>>(
+          stream: _taskService.getActiveTasks(),
+          builder: (context, snapshot) {
+            if (snapshot.connectionState == ConnectionState.waiting) {
+              return const Center(child: CircularProgressIndicator());
+            }
+
+            final tasks = snapshot.data ?? [];
+
+            final filteredTasks = _filterTasks(tasks);
+
+            final completedTasks =
+                tasks.where((task) => task.isDone).length;
+
+            final totalTasks = tasks.length;
+
+            final priorityTasks =
+                tasks.where((task) => task.isPriority).toList();
+
+            return CustomScrollView(
+              physics: const BouncingScrollPhysics(),
+              slivers: [
+                SliverToBoxAdapter(
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(24, 28, 24, 0),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        MainHeader(date: DateTime.now()),
+                        const SizedBox(height: 24),
+                        OverviewCard(
+                          completedTasks: completedTasks,
+                          totalTasks: totalTasks,
+                        ),
+                        const SizedBox(height: 20),
+                        _buildSearchBar(),
+                        const SizedBox(height: 20),
+                        _buildSectionTitle('Today Focus'),
+                        const SizedBox(height: 14),
+                        PriorityTaskGrid(
+                          tasks: priorityTasks,
+                          onTaskTap: (task) => () => _toggleTask(task),
+                        ),
+                        const SizedBox(height: 28),
+                        _buildSectionTitle('Task Groups'),
+                        const SizedBox(height: 14),
+                        CategoryTabs(
+                          selectedTab: _selectedTab,
+                          onTabSelected: (tab) {
+                            setState(() {
+                              _selectedTab = tab;
+                            });
+                          },
+                        ),
+                        const SizedBox(height: 20),
+                        _buildTaskListHeader(filteredTasks),
+                        const SizedBox(height: 14),
+                      ],
                     ),
                   ),
-          ],
+                ),
+
+                filteredTasks.isEmpty
+                    ? SliverToBoxAdapter(
+                        child: Padding(
+                          padding:
+                              const EdgeInsets.fromLTRB(24, 0, 24, 140),
+                          child: _buildEmptyState(),
+                        ),
+                      )
+                    : SliverPadding(
+                        padding:
+                            const EdgeInsets.fromLTRB(24, 0, 24, 140),
+                        sliver: SliverList.separated(
+                          itemCount: filteredTasks.length,
+                          separatorBuilder: (_, __) =>
+                              const SizedBox(height: 12),
+                          itemBuilder: (context, index) {
+                            final task = filteredTasks[index];
+                            return TaskCard(
+                              task: task,
+                              onTap: () => _toggleTask(task),
+                            );
+                          },
+                        ),
+                      ),
+              ],
+            );
+          },
         ),
       ),
       bottomNavigationBar: const AppBottomNavBar(currentIndex: 0),
@@ -198,41 +197,18 @@ class _MainScreenState extends State<MainScreen> {
       ),
       decoration: InputDecoration(
         hintText: 'Search tasks...',
-        hintStyle: TextStyle(color: AppColors.mutedText.withOpacity(0.7)),
-        prefixIcon: Icon(Icons.search_rounded, color: AppColors.mutedText),
-        suffixIcon: _searchQuery.isNotEmpty
-            ? IconButton(
-                onPressed: () {
-                  _searchController.clear();
-                  setState(() {
-                    _searchQuery = '';
-                  });
-                },
-                icon: Icon(Icons.close_rounded, color: AppColors.mutedText),
-              )
-            : null,
+        prefixIcon: const Icon(Icons.search),
         filled: true,
         fillColor: AppColors.card,
-        contentPadding: const EdgeInsets.symmetric(
-          horizontal: 20,
-          vertical: 18,
-        ),
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(22),
           borderSide: BorderSide.none,
-        ),
-        focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(22),
-          borderSide: BorderSide(
-            color: AppColors.primary.withOpacity(0.35),
-            width: 1.8,
-          ),
         ),
       ),
     );
   }
 
-  Widget _buildTaskListHeader() {
+  Widget _buildTaskListHeader(List<TaskModel> tasks) {
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
@@ -247,7 +223,7 @@ class _MainScreenState extends State<MainScreen> {
           ),
         ),
         Text(
-          '${filteredTasks.length} shown',
+          '${tasks.length} shown',
           style: GoogleFonts.nunitoSans(
             fontSize: 14,
             fontWeight: FontWeight.w800,
@@ -259,39 +235,10 @@ class _MainScreenState extends State<MainScreen> {
   }
 
   Widget _buildEmptyState() {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(24),
-      decoration: BoxDecoration(
-        color: AppColors.card,
-        borderRadius: BorderRadius.circular(24),
-        border: Border.all(color: AppColors.muted.withOpacity(0.45)),
-      ),
-      child: Column(
-        children: [
-          Icon(Icons.inbox_rounded, color: AppColors.mutedText, size: 34),
-          const SizedBox(height: 12),
-          Text(
-            'No tasks here yet',
-            style: GoogleFonts.poppins(
-              fontSize: 18,
-              fontWeight: FontWeight.w700,
-              color: Colors.white,
-            ),
-          ),
-          const SizedBox(height: 6),
-          Text(
-            selectedCategoryLabel == 'All'
-                ? 'Try adding a task to get started.'
-                : 'No $selectedCategoryLabel tasks found.',
-            textAlign: TextAlign.center,
-            style: GoogleFonts.nunitoSans(
-              fontSize: 14,
-              fontWeight: FontWeight.w700,
-              color: AppColors.mutedText,
-            ),
-          ),
-        ],
+    return Center(
+      child: Text(
+        'No tasks yet. Tap + to add one.',
+        style: TextStyle(color: Colors.white),
       ),
     );
   }
