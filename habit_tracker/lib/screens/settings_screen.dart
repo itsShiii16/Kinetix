@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 
+import '../screens/auth_screen.dart';
 import '../utils/app_colors.dart';
 import '../widgets/shared/app_bottom_nav_bar.dart';
 
@@ -12,15 +14,22 @@ class SettingsScreen extends StatefulWidget {
 }
 
 class _SettingsScreenState extends State<SettingsScreen> {
-  final TextEditingController _nameController =
-      TextEditingController(text: 'Ash');
-  final TextEditingController _emailController =
-      TextEditingController(text: 'ash@example.com');
-  final TextEditingController _passwordController =
-      TextEditingController(text: 'password123');
+  final User? user = FirebaseAuth.instance.currentUser;
+
+  late final TextEditingController _nameController;
+  late final TextEditingController _emailController;
+  final TextEditingController _passwordController = TextEditingController();
 
   bool _notificationsEnabled = true;
   bool _obscurePassword = true;
+  bool _isLoggingOut = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _nameController = TextEditingController(text: '');
+    _emailController = TextEditingController(text: user?.email ?? '');
+  }
 
   @override
   void dispose() {
@@ -36,10 +45,35 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
   }
 
-  void _logout() {
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Logout flow coming next.')),
-    );
+  Future<void> _logout() async {
+    if (_isLoggingOut) return;
+
+    setState(() {
+      _isLoggingOut = true;
+    });
+
+    try {
+      await FirebaseAuth.instance.signOut();
+
+      if (!mounted) return;
+
+      Navigator.of(context).pushAndRemoveUntil(
+        MaterialPageRoute(builder: (_) => const AuthScreen()),
+        (route) => false,
+      );
+    } catch (e) {
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Logout failed: $e')),
+      );
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isLoggingOut = false;
+        });
+      }
+    }
   }
 
   @override
@@ -107,11 +141,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
               ),
               const SizedBox(height: 12),
               _buildActionButton(
-                label: 'Log Out',
+                label: _isLoggingOut ? 'Logging Out...' : 'Log Out',
                 backgroundColor: AppColors.card,
                 textColor: Colors.white,
                 borderColor: AppColors.destructive.withOpacity(0.35),
-                onTap: _logout,
+                onTap: _isLoggingOut ? null : _logout,
               ),
             ],
           ),
@@ -315,7 +349,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     required Color backgroundColor,
     required Color textColor,
     Color? borderColor,
-    required VoidCallback onTap,
+    required VoidCallback? onTap,
   }) {
     return SizedBox(
       width: double.infinity,

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 
 class AuthScreen extends StatefulWidget {
   const AuthScreen({super.key});
@@ -10,6 +11,7 @@ class AuthScreen extends StatefulWidget {
 }
 
 class _AuthScreenState extends State<AuthScreen> {
+  final TextEditingController _nameController = TextEditingController();
   final TextEditingController _emailController = TextEditingController();
   final TextEditingController _passwordController = TextEditingController();
   final TextEditingController _confirmPasswordController =
@@ -28,6 +30,7 @@ class _AuthScreenState extends State<AuthScreen> {
 
   @override
   void dispose() {
+    _nameController.dispose();
     _emailController.dispose();
     _passwordController.dispose();
     _confirmPasswordController.dispose();
@@ -37,6 +40,7 @@ class _AuthScreenState extends State<AuthScreen> {
   Future<void> _submitAuthForm() async {
     FocusScope.of(context).unfocus();
 
+    final name = _nameController.text.trim();
     final email = _emailController.text.trim();
     final password = _passwordController.text.trim();
     final confirmPassword = _confirmPasswordController.text.trim();
@@ -46,8 +50,13 @@ class _AuthScreenState extends State<AuthScreen> {
       return;
     }
 
+    if (!_isLogin && name.isEmpty) {
+      _showError('Please enter your name.');
+      return;
+    }
+
     if (!email.contains('@') || !email.contains('.')) {
-      _showError('Please enter a valid email address.');
+      _showError('Please enter a valid email.');
       return;
     }
 
@@ -61,11 +70,7 @@ class _AuthScreenState extends State<AuthScreen> {
       return;
     }
 
-    if (mounted) {
-      setState(() {
-        _isLoading = true;
-      });
-    }
+    setState(() => _isLoading = true);
 
     try {
       if (_isLogin) {
@@ -74,90 +79,49 @@ class _AuthScreenState extends State<AuthScreen> {
           password: password,
         );
       } else {
-        await FirebaseAuth.instance.createUserWithEmailAndPassword(
+        final credential =
+            await FirebaseAuth.instance.createUserWithEmailAndPassword(
           email: email,
           password: password,
         );
+
+        // 🔥 CREATE FIRESTORE USER DOCUMENT
+        await FirebaseFirestore.instance
+            .collection('users')
+            .doc(credential.user!.uid)
+            .set({
+          'name': name,
+          'email': email,
+          'notificationsEnabled': true,
+          'createdAt': FieldValue.serverTimestamp(),
+        });
       }
 
+      _nameController.clear();
       _emailController.clear();
       _passwordController.clear();
       _confirmPasswordController.clear();
     } on FirebaseAuthException catch (e) {
-      debugPrint('FirebaseAuthException: ${e.code} - ${e.message}');
-
-      String errorMessage;
-
-      switch (e.code) {
-        case 'user-not-found':
-          errorMessage = 'No account found for that email.';
-          break;
-        case 'wrong-password':
-        case 'invalid-credential':
-          errorMessage = 'Incorrect email or password.';
-          break;
-        case 'email-already-in-use':
-          errorMessage = 'This email is already registered.';
-          break;
-        case 'invalid-email':
-          errorMessage = 'Invalid email format.';
-          break;
-        case 'weak-password':
-          errorMessage = 'Password must be at least 6 characters.';
-          break;
-        case 'operation-not-allowed':
-          errorMessage = 'Email/password sign-in is disabled in Firebase.';
-          break;
-        case 'network-request-failed':
-          errorMessage = 'Check your internet connection.';
-          break;
-        case 'too-many-requests':
-          errorMessage = 'Too many attempts. Please try again later.';
-          break;
-        case 'user-disabled':
-          errorMessage = 'This account has been disabled.';
-          break;
-        default:
-          errorMessage = e.message ?? 'Something went wrong. Please try again.';
-      }
-
-      _showError(errorMessage);
+      _showError(e.message ?? 'Authentication error');
     } catch (e) {
-      debugPrint('Unexpected auth error: $e');
       _showError('Unexpected error: $e');
-    } finally {
-      if (mounted) {
-        setState(() {
-          _isLoading = false;
-        });
-      }
     }
+
+    setState(() => _isLoading = false);
   }
 
   void _showError(String message) {
-    if (!mounted) return;
-
-    ScaffoldMessenger.of(context)
-      ..hideCurrentSnackBar()
-      ..showSnackBar(
-        SnackBar(
-          content: Text(
-            message,
-            style: GoogleFonts.nunitoSans(fontWeight: FontWeight.bold),
-          ),
-          backgroundColor: const Color(0xFFFF453A),
-          behavior: SnackBarBehavior.floating,
-        ),
-      );
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        backgroundColor: const Color(0xFFFF453A),
+      ),
+    );
   }
 
   void _toggleMode() {
     setState(() {
       _isLogin = !_isLogin;
-      _passwordController.clear();
-      _confirmPasswordController.clear();
-      _obscurePassword = true;
-      _obscureConfirmPassword = true;
     });
   }
 
@@ -166,220 +130,63 @@ class _AuthScreenState extends State<AuthScreen> {
     return Scaffold(
       backgroundColor: bgColor,
       body: SafeArea(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 24),
+        child: Padding(
+          padding: const EdgeInsets.all(24),
           child: Column(
-            crossAxisAlignment: CrossAxisAlignment.center,
             children: [
-              const SizedBox(height: 20),
-
-              Container(
-                width: 200,
-                decoration: BoxDecoration(
-                  boxShadow: [
-                    BoxShadow(
-                      color: secondaryColor.withValues(alpha: 0.3),
-                      blurRadius: 40,
-                      spreadRadius: -10,
-                    ),
-                  ],
-                ),
-                child: Image.network(
-                  'https://ggrhecslgdflloszjkwl.supabase.co/storage/v1/object/public/user-assets/KW8OrAZwCO9/components/W6uccXGKDqb.png',
-                  fit: BoxFit.contain,
-                ),
-              ),
-              const SizedBox(height: 32),
-
-              RichText(
-                textAlign: TextAlign.center,
-                text: TextSpan(
-                  style: GoogleFonts.poppins(
-                    fontSize: 36,
-                    fontWeight: FontWeight.w900,
-                    color: Colors.white,
-                    height: 1.1,
-                  ),
-                  children: [
-                    TextSpan(text: _isLogin ? 'Welcome\n' : 'Start Your\n'),
-                    TextSpan(
-                      text: _isLogin ? 'Back' : 'Journey',
-                      style: TextStyle(
-                        color: primaryColor,
-                        shadows: [
-                          Shadow(
-                            color: primaryColor.withValues(alpha: 0.5),
-                            blurRadius: 15,
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 16),
+              const SizedBox(height: 40),
 
               Text(
-                _isLogin
-                    ? 'Ready to maintain your streak?'
-                    : 'Level up your daily life today.',
-                textAlign: TextAlign.center,
-                style: GoogleFonts.nunitoSans(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w600,
-                  color: mutedTextColor,
+                _isLogin ? "Welcome Back" : "Create Account",
+                style: GoogleFonts.poppins(
+                  fontSize: 28,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.white,
                 ),
               ),
-              const SizedBox(height: 48),
 
-              _buildInputLabel('EMAIL'),
-              const SizedBox(height: 8),
+              const SizedBox(height: 30),
+
+              if (!_isLogin)
+                _buildTextField(
+                  controller: _nameController,
+                  hintText: 'Name',
+                ),
+
               _buildTextField(
                 controller: _emailController,
-                hintText: 'hello@example.com',
-                keyboardType: TextInputType.emailAddress,
-                textInputAction:
-                    _isLogin ? TextInputAction.done : TextInputAction.next,
+                hintText: 'Email',
               ),
-              const SizedBox(height: 20),
 
-              _buildInputLabel('PASSWORD'),
-              const SizedBox(height: 8),
               _buildTextField(
                 controller: _passwordController,
-                hintText: '••••••••',
-                obscureText: _obscurePassword,
-                textInputAction:
-                    _isLogin ? TextInputAction.done : TextInputAction.next,
-                suffixIcon: IconButton(
-                  onPressed: () {
-                    setState(() {
-                      _obscurePassword = !_obscurePassword;
-                    });
-                  },
-                  icon: Icon(
-                    _obscurePassword ? Icons.visibility_off : Icons.visibility,
-                    color: mutedTextColor,
-                  ),
-                ),
+                hintText: 'Password',
+                obscureText: true,
               ),
 
-              if (!_isLogin) ...[
-                const SizedBox(height: 20),
-                _buildInputLabel('CONFIRM PASSWORD'),
-                const SizedBox(height: 8),
+              if (!_isLogin)
                 _buildTextField(
                   controller: _confirmPasswordController,
-                  hintText: '••••••••',
-                  obscureText: _obscureConfirmPassword,
-                  textInputAction: TextInputAction.done,
-                  suffixIcon: IconButton(
-                    onPressed: () {
-                      setState(() {
-                        _obscureConfirmPassword = !_obscureConfirmPassword;
-                      });
-                    },
-                    icon: Icon(
-                      _obscureConfirmPassword
-                          ? Icons.visibility_off
-                          : Icons.visibility,
-                      color: mutedTextColor,
-                    ),
-                  ),
+                  hintText: 'Confirm Password',
+                  obscureText: true,
                 ),
-              ],
 
-              const SizedBox(height: 32),
+              const SizedBox(height: 30),
 
-              Material(
-                color: Colors.transparent,
-                child: InkWell(
-                  onTap: _isLoading ? null : _submitAuthForm,
-                  borderRadius: BorderRadius.circular(30),
-                  child: Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.symmetric(vertical: 20),
-                    decoration: BoxDecoration(
-                      color: primaryColor,
-                      borderRadius: BorderRadius.circular(30),
-                      boxShadow: [
-                        BoxShadow(
-                          color: primaryColor.withValues(alpha: 0.3),
-                          offset: const Offset(0, 10),
-                          blurRadius: 20,
-                          spreadRadius: -5,
-                        ),
-                      ],
-                    ),
-                    child: Center(
-                      child: _isLoading
-                          ? SizedBox(
-                              width: 28,
-                              height: 28,
-                              child: CircularProgressIndicator(
-                                color: bgColor,
-                                strokeWidth: 3,
-                              ),
-                            )
-                          : Text(
-                              _isLogin ? 'Log In' : 'Sign Up',
-                              style: GoogleFonts.poppins(
-                                fontSize: 20,
-                                fontWeight: FontWeight.w900,
-                                color: bgColor,
-                              ),
-                            ),
-                    ),
-                  ),
+              ElevatedButton(
+                onPressed: _isLoading ? null : _submitAuthForm,
+                child: Text(_isLogin ? "Login" : "Sign Up"),
+              ),
+
+              TextButton(
+                onPressed: _toggleMode,
+                child: Text(
+                  _isLogin
+                      ? "Create new account"
+                      : "Already have an account?",
                 ),
               ),
-              const SizedBox(height: 32),
-
-              Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Text(
-                    _isLogin
-                        ? "Don't have an account? "
-                        : "Already have an account? ",
-                    style: GoogleFonts.nunitoSans(
-                      fontSize: 14,
-                      fontWeight: FontWeight.w700,
-                      color: mutedTextColor,
-                    ),
-                  ),
-                  GestureDetector(
-                    onTap: _toggleMode,
-                    child: Text(
-                      _isLogin ? 'Sign Up' : 'Log In',
-                      style: GoogleFonts.nunitoSans(
-                        fontSize: 14,
-                        fontWeight: FontWeight.w800,
-                        color: secondaryColor,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 24),
             ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildInputLabel(String text) {
-    return Align(
-      alignment: Alignment.centerLeft,
-      child: Padding(
-        padding: const EdgeInsets.only(left: 8),
-        child: Text(
-          text,
-          style: GoogleFonts.nunitoSans(
-            fontSize: 12,
-            fontWeight: FontWeight.w800,
-            color: mutedTextColor,
           ),
         ),
       ),
@@ -390,44 +197,19 @@ class _AuthScreenState extends State<AuthScreen> {
     required TextEditingController controller,
     required String hintText,
     bool obscureText = false,
-    TextInputType keyboardType = TextInputType.text,
-    TextInputAction textInputAction = TextInputAction.next,
-    Widget? suffixIcon,
   }) {
-    return TextField(
-      controller: controller,
-      obscureText: obscureText,
-      keyboardType: keyboardType,
-      textInputAction: textInputAction,
-      onSubmitted: (_) {
-        if (textInputAction == TextInputAction.done && !_isLoading) {
-          _submitAuthForm();
-        }
-      },
-      style: GoogleFonts.nunitoSans(
-        color: Colors.white,
-        fontWeight: FontWeight.w600,
-        fontSize: 16,
-      ),
-      decoration: InputDecoration(
-        hintText: hintText,
-        hintStyle: TextStyle(color: mutedTextColor.withValues(alpha: 0.5)),
-        filled: true,
-        fillColor: cardColor,
-        suffixIcon: suffixIcon,
-        contentPadding: const EdgeInsets.symmetric(
-          horizontal: 24,
-          vertical: 20,
-        ),
-        border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(30),
-          borderSide: BorderSide.none,
-        ),
-        focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(30),
-          borderSide: BorderSide(
-            color: primaryColor.withValues(alpha: 0.5),
-            width: 2,
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 16),
+      child: TextField(
+        controller: controller,
+        obscureText: obscureText,
+        style: const TextStyle(color: Colors.white),
+        decoration: InputDecoration(
+          hintText: hintText,
+          filled: true,
+          fillColor: cardColor,
+          border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(12),
           ),
         ),
       ),
