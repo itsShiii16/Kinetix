@@ -10,6 +10,7 @@ class TaskModel {
   final int? total;
   final bool isDone;
   final bool isPriority;
+  final bool isDeleted;
   final IconData icon;
   final Color color;
 
@@ -23,11 +24,11 @@ class TaskModel {
     this.total,
     required this.isDone,
     required this.isPriority,
+    required this.isDeleted,
     required this.icon,
     required this.color,
   });
 
-  // --- COPY WITH (for state updates later) ---
   TaskModel copyWith({
     String? id,
     String? title,
@@ -38,6 +39,7 @@ class TaskModel {
     int? total,
     bool? isDone,
     bool? isPriority,
+    bool? isDeleted,
     IconData? icon,
     Color? color,
   }) {
@@ -51,29 +53,31 @@ class TaskModel {
       total: total ?? this.total,
       isDone: isDone ?? this.isDone,
       isPriority: isPriority ?? this.isPriority,
+      isDeleted: isDeleted ?? this.isDeleted,
       icon: icon ?? this.icon,
       color: color ?? this.color,
     );
   }
 
-  // --- FROM MAP (for Firebase later) ---
   factory TaskModel.fromMap(Map<String, dynamic> map, String id) {
+    final category = (map['category'] ?? '').toString();
+
     return TaskModel(
       id: id,
-      title: map['title'] ?? '',
-      subtitle: map['subtitle'] ?? '',
-      category: map['category'] ?? '',
-      type: map['type'] ?? 'simple',
-      current: map['current'],
-      total: map['total'],
+      title: (map['title'] ?? '').toString(),
+      subtitle: (map['subtitle'] ?? '').toString(),
+      category: category,
+      type: (map['type'] ?? 'simple').toString(),
+      current: map['current'] is int ? map['current'] as int : null,
+      total: map['total'] is int ? map['total'] as int : null,
       isDone: map['isDone'] ?? false,
       isPriority: map['isPriority'] ?? false,
-      icon: Icons.task_alt_rounded, // fallback for now
-      color: Colors.white, // fallback for now
+      isDeleted: map['isDeleted'] ?? false,
+      icon: _iconFromCategory(category),
+      color: _colorFromCategory(category),
     );
   }
 
-  // --- TO MAP (for Firebase later) ---
   Map<String, dynamic> toMap() {
     return {
       'title': title,
@@ -84,6 +88,37 @@ class TaskModel {
       'total': total,
       'isDone': isDone,
       'isPriority': isPriority,
+      'isDeleted': isDeleted,
     };
+  }
+
+  static IconData _iconFromCategory(String category) {
+    switch (category.toLowerCase()) {
+      case 'lifestyle':
+        return Icons.self_improvement_rounded;
+      case 'school':
+        return Icons.school_rounded;
+      case 'work':
+        return Icons.work_rounded;
+      case 'home':
+        return Icons.home_rounded;
+      default:
+        return Icons.task_alt_rounded;
+    }
+  }
+
+  static Color _colorFromCategory(String category) {
+    switch (category.toLowerCase()) {
+      case 'lifestyle':
+        return const Color(0xFF56CCF2);
+      case 'school':
+        return const Color(0xFFB4A6FF);
+      case 'work':
+        return const Color(0xFFFF9A62);
+      case 'home':
+        return const Color(0xFF7EE6A2);
+      default:
+        return Colors.white;
+    }
   }
 }
