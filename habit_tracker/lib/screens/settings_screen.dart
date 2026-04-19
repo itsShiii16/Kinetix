@@ -56,22 +56,22 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
       if (!mounted) return;
 
-      // IMPORTANT:
-      // Do not navigate to AuthScreen manually.
-      // Let main.dart's authStateChanges() handle that.
       Navigator.of(context).popUntil((route) => route.isFirst);
+    } on FirebaseAuthException catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(e.message ?? 'Logout failed.')),
+      );
     } catch (e) {
       if (!mounted) return;
-
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Logout failed: $e')),
       );
     } finally {
-      if (mounted) {
-        setState(() {
-          _isLoggingOut = false;
-        });
-      }
+      if (!mounted) return;
+      setState(() {
+        _isLoggingOut = false;
+      });
     }
   }
 

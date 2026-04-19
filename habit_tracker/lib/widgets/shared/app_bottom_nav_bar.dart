@@ -83,7 +83,7 @@ class AppBottomNavBar extends StatelessWidget {
         targetScreen = const MainScreen();
     }
 
-    Navigator.pushReplacement(
+    Navigator.push(
       context,
       MaterialPageRoute(builder: (_) => targetScreen),
     );
