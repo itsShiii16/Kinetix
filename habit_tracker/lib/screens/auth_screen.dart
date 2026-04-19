@@ -37,27 +37,43 @@ class _AuthScreenState extends State<AuthScreen> {
   }
 
   Future<void> _submitAuthForm() async {
+    FocusScope.of(context).unfocus();
+
     final name = _nameController.text.trim();
     final email = _emailController.text.trim();
     final password = _passwordController.text.trim();
     final confirmPassword = _confirmPasswordController.text.trim();
 
     if (email.isEmpty || password.isEmpty) {
-      _showError('Please fill in email and password');
+      _showError('Please fill in email and password.');
       return;
     }
 
     if (!_isLogin && name.isEmpty) {
-      _showError('Please enter your name');
+      _showError('Please enter your name.');
+      return;
+    }
+
+    if (!email.contains('@') || !email.contains('.')) {
+      _showError('Please enter a valid email address.');
+      return;
+    }
+
+    if (password.length < 6) {
+      _showError('Password must be at least 6 characters.');
       return;
     }
 
     if (!_isLogin && password != confirmPassword) {
-      _showError('Passwords do not match');
+      _showError('Passwords do not match.');
       return;
     }
 
-    setState(() => _isLoading = true);
+    if (_isLoading) return;
+
+    setState(() {
+      _isLoading = true;
+    });
 
     try {
       if (_isLogin) {
@@ -87,22 +103,74 @@ class _AuthScreenState extends State<AuthScreen> {
       _emailController.clear();
       _passwordController.clear();
       _confirmPasswordController.clear();
-    } catch (e) {
-      _showError(e.toString());
-    }
 
-    setState(() => _isLoading = false);
+      // Do not navigate manually here.
+      // main.dart is already listening to authStateChanges()
+      // and will automatically switch to MainScreen.
+    } on FirebaseAuthException catch (e) {
+      String message;
+
+      switch (e.code) {
+        case 'invalid-email':
+          message = 'Invalid email address.';
+          break;
+        case 'email-already-in-use':
+          message = 'This email is already registered.';
+          break;
+        case 'weak-password':
+          message = 'Password must be at least 6 characters.';
+          break;
+        case 'user-not-found':
+        case 'invalid-credential':
+        case 'wrong-password':
+          message = 'Incorrect email or password.';
+          break;
+        case 'network-request-failed':
+          message = 'Please check your internet connection.';
+          break;
+        default:
+          message = e.message ?? 'Authentication failed.';
+      }
+
+      _showError(message);
+    } catch (e) {
+      _showError('Something went wrong. Please try again.');
+    } finally {
+      if (!mounted) return;
+      setState(() {
+        _isLoading = false;
+      });
+    }
   }
 
   void _showError(String msg) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(msg)),
-    );
+    if (!mounted) return;
+
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(
+        SnackBar(
+          backgroundColor: const Color(0xFFFF453A),
+          content: Text(
+            msg,
+            style: GoogleFonts.nunitoSans(
+              fontWeight: FontWeight.w700,
+              color: Colors.white,
+            ),
+          ),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
   }
 
   void _toggleMode() {
+    if (_isLoading) return;
+
     setState(() {
       _isLogin = !_isLogin;
+      _nameController.clear();
+      _passwordController.clear();
+      _confirmPasswordController.clear();
     });
   }
 
@@ -118,7 +186,6 @@ class _AuthScreenState extends State<AuthScreen> {
             children: [
               const SizedBox(height: 40),
 
-              // Hero Image
               Container(
                 width: 240,
                 decoration: BoxDecoration(
@@ -136,7 +203,6 @@ class _AuthScreenState extends State<AuthScreen> {
               ),
               const SizedBox(height: 40),
 
-              // Title
               RichText(
                 textAlign: TextAlign.center,
                 text: TextSpan(
@@ -176,7 +242,6 @@ class _AuthScreenState extends State<AuthScreen> {
               ),
               const SizedBox(height: 48),
 
-              // NAME (SIGN UP ONLY)
               if (!_isLogin) ...[
                 _buildInputLabel('NAME'),
                 const SizedBox(height: 8),
@@ -204,7 +269,6 @@ class _AuthScreenState extends State<AuthScreen> {
                 obscureText: true,
               ),
 
-              // CONFIRM PASSWORD
               if (!_isLogin) ...[
                 const SizedBox(height: 20),
                 _buildInputLabel('CONFIRM PASSWORD'),
@@ -218,7 +282,6 @@ class _AuthScreenState extends State<AuthScreen> {
 
               const SizedBox(height: 32),
 
-              // BUTTON
               GestureDetector(
                 onTap: _isLoading ? null : _submitAuthForm,
                 child: Container(
@@ -227,23 +290,39 @@ class _AuthScreenState extends State<AuthScreen> {
                   decoration: BoxDecoration(
                     color: primaryColor,
                     borderRadius: BorderRadius.circular(30),
+                    boxShadow: [
+                      BoxShadow(
+                        color: primaryColor.withOpacity(0.3),
+                        offset: const Offset(0, 10),
+                        blurRadius: 20,
+                        spreadRadius: -5,
+                      ),
+                    ],
                   ),
                   child: Center(
-                    child: Text(
-                      _isLogin ? 'Log In' : 'Sign Up',
-                      style: GoogleFonts.poppins(
-                        fontSize: 20,
-                        fontWeight: FontWeight.w900,
-                        color: bgColor,
-                      ),
-                    ),
+                    child: _isLoading
+                        ? SizedBox(
+                            width: 24,
+                            height: 24,
+                            child: CircularProgressIndicator(
+                              color: bgColor,
+                              strokeWidth: 3,
+                            ),
+                          )
+                        : Text(
+                            _isLogin ? 'Log In' : 'Sign Up',
+                            style: GoogleFonts.poppins(
+                              fontSize: 20,
+                              fontWeight: FontWeight.w900,
+                              color: bgColor,
+                            ),
+                          ),
                   ),
                 ),
               ),
 
               const SizedBox(height: 32),
 
-              // SWITCH MODE
               Row(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
@@ -319,6 +398,13 @@ class _AuthScreenState extends State<AuthScreen> {
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(30),
           borderSide: BorderSide.none,
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(30),
+          borderSide: BorderSide(
+            color: primaryColor.withOpacity(0.5),
+            width: 2,
+          ),
         ),
       ),
     );

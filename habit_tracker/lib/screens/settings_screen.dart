@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
-import '../screens/auth_screen.dart';
 import '../utils/app_colors.dart';
 import '../widgets/shared/app_bottom_nav_bar.dart';
 
@@ -57,10 +56,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
       if (!mounted) return;
 
-      Navigator.of(context).pushAndRemoveUntil(
-        MaterialPageRoute(builder: (_) => const AuthScreen()),
-        (route) => false,
-      );
+      // IMPORTANT:
+      // Do not navigate to AuthScreen manually.
+      // Let main.dart's authStateChanges() handle that.
+      Navigator.of(context).popUntil((route) => route.isFirst);
     } catch (e) {
       if (!mounted) return;
 
