@@ -14,44 +14,61 @@ class TaskService {
     return user.uid;
   }
 
-  CollectionReference get _taskCollection =>
+  CollectionReference<Map<String, dynamic>> get _taskCollection =>
       _firestore.collection('users').doc(_userId).collection('tasks');
 
-  CollectionReference get _logCollection =>
+  CollectionReference<Map<String, dynamic>> get _logCollection =>
       _firestore.collection('users').doc(_userId).collection('task_logs');
+
+  String _todayKey() {
+    final today = DateTime.now();
+    return "${today.year}-${today.month.toString().padLeft(2, '0')}-${today.day.toString().padLeft(2, '0')}";
+  }
 
   // =============================
   // CREATE TASK
   // =============================
   Future<void> createTask(TaskModel task) async {
     await _taskCollection.doc(task.id).set({
-      'title': task.title,
-      'subtitle': task.subtitle,
-      'category': task.category,
-      'type': task.type,
-      'current': task.current,
-      'total': task.total,
-      'isPriority': task.isPriority,
-      'isDeleted': false,
-      'deletedAt': null,
+      ...task.toMap(),
       'createdAt': FieldValue.serverTimestamp(),
       'updatedAt': FieldValue.serverTimestamp(),
+      'deletedAt': null,
     });
   }
 
   // =============================
-  // GET ACTIVE TASKS
+  // READ ACTIVE TASKS
   // =============================
   Stream<List<TaskModel>> getActiveTasks() {
     return _taskCollection
         .where('isDeleted', isEqualTo: false)
         .snapshots()
         .map((snapshot) {
+      final tasks = snapshot.docs.map((doc) {
+        return TaskModel.fromMap(doc.data(), doc.id);
+      }).toList();
+
+      tasks.sort((a, b) {
+        if (a.isDone != b.isDone) return a.isDone ? 1 : -1;
+        if (a.isPriority != b.isPriority) return a.isPriority ? -1 : 1;
+        return 0;
+      });
+
+      return tasks;
+    });
+  }
+
+  // =============================
+  // READ DELETED TASKS
+  // =============================
+  Stream<List<TaskModel>> getDeletedTasks() {
+    return _taskCollection
+        .where('isDeleted', isEqualTo: true)
+        .snapshots()
+        .map((snapshot) {
       return snapshot.docs.map((doc) {
-        return TaskModel.fromMap(
-          doc.data() as Map<String, dynamic>,
-          doc.id,
-        );
+        return TaskModel.fromMap(doc.data(), doc.id);
       }).toList();
     });
   }
@@ -67,38 +84,42 @@ class TaskService {
       'type': task.type,
       'current': task.current,
       'total': task.total,
+      'isDone': task.isDone,
       'isPriority': task.isPriority,
+      'isDeleted': task.isDeleted,
       'updatedAt': FieldValue.serverTimestamp(),
     });
   }
 
   // =============================
-  // TOGGLE COMPLETE (TODAY LOG)
+  // TOGGLE COMPLETE (TASK + TODAY LOG)
   // =============================
   Future<void> toggleTaskCompletion(TaskModel task) async {
-    final today = DateTime.now();
-    final dateKey =
-        "${today.year}-${today.month.toString().padLeft(2, '0')}-${today.day.toString().padLeft(2, '0')}";
+    final dateKey = _todayKey();
+    final newValue = !task.isDone;
 
+    // update task document so UI can immediately reflect status
+    await _taskCollection.doc(task.id).update({
+      'isDone': newValue,
+      'updatedAt': FieldValue.serverTimestamp(),
+    });
+
+    // keep today's log in sync
     final logQuery = await _logCollection
         .where('taskId', isEqualTo: task.id)
         .where('date', isEqualTo: dateKey)
         .get();
 
     if (logQuery.docs.isNotEmpty) {
-      // toggle existing log
-      final doc = logQuery.docs.first;
-      final current = doc['isCompleted'] as bool;
-
-      await doc.reference.update({
-        'isCompleted': !current,
+      await logQuery.docs.first.reference.update({
+        'isCompleted': newValue,
       });
     } else {
-      // create new log
       await _logCollection.add({
         'taskId': task.id,
+        'category': task.category,
         'date': dateKey,
-        'isCompleted': true,
+        'isCompleted': newValue,
         'createdAt': FieldValue.serverTimestamp(),
       });
     }
@@ -111,6 +132,7 @@ class TaskService {
     await _taskCollection.doc(taskId).update({
       'isDeleted': true,
       'deletedAt': FieldValue.serverTimestamp(),
+      'updatedAt': FieldValue.serverTimestamp(),
     });
   }
 
@@ -121,6 +143,7 @@ class TaskService {
     await _taskCollection.doc(taskId).update({
       'isDeleted': false,
       'deletedAt': null,
+      'updatedAt': FieldValue.serverTimestamp(),
     });
   }
 
@@ -128,16 +151,12 @@ class TaskService {
   // HARD DELETE
   // =============================
   Future<void> hardDeleteTask(String taskId) async {
-    // delete task
-    await _taskCollection.doc(taskId).delete();
+    final logs = await _logCollection.where('taskId', isEqualTo: taskId).get();
 
-    // delete related logs
-    final logs = await _logCollection
-        .where('taskId', isEqualTo: taskId)
-        .get();
-
-    for (var doc in logs.docs) {
+    for (final doc in logs.docs) {
       await doc.reference.delete();
     }
+
+    await _taskCollection.doc(taskId).delete();
   }
 }
