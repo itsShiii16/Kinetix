@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 
 class AuthScreen extends StatefulWidget {
   const AuthScreen({super.key});
@@ -9,23 +10,155 @@ class AuthScreen extends StatefulWidget {
 }
 
 class _AuthScreenState extends State<AuthScreen> {
-  // Controllers ready for Firebase Auth
   final TextEditingController _emailController = TextEditingController();
   final TextEditingController _passwordController = TextEditingController();
+  final TextEditingController _confirmPasswordController =
+      TextEditingController();
 
-  // Kinetix Theme Colors
+  bool _isLogin = true;
+  bool _isLoading = false;
+  bool _obscurePassword = true;
+  bool _obscureConfirmPassword = true;
+
   final Color bgColor = const Color(0xFF151515);
-  final Color primaryColor = const Color(0xFFD4FF00); // Neon Lime
-  final Color secondaryColor = const Color(0xFFB4A6FF); // Pastel Purple
+  final Color primaryColor = const Color(0xFFD4FF00);
+  final Color secondaryColor = const Color(0xFFB4A6FF);
   final Color cardColor = const Color(0xFF2A2A2C);
-  final Color mutedColor = const Color(0xFF3A3A3C);
   final Color mutedTextColor = const Color(0xFF8E8E93);
 
   @override
   void dispose() {
     _emailController.dispose();
     _passwordController.dispose();
+    _confirmPasswordController.dispose();
     super.dispose();
+  }
+
+  Future<void> _submitAuthForm() async {
+    FocusScope.of(context).unfocus();
+
+    final email = _emailController.text.trim();
+    final password = _passwordController.text.trim();
+    final confirmPassword = _confirmPasswordController.text.trim();
+
+    if (email.isEmpty || password.isEmpty) {
+      _showError('Please fill in both email and password.');
+      return;
+    }
+
+    if (!email.contains('@') || !email.contains('.')) {
+      _showError('Please enter a valid email address.');
+      return;
+    }
+
+    if (password.length < 6) {
+      _showError('Password must be at least 6 characters.');
+      return;
+    }
+
+    if (!_isLogin && password != confirmPassword) {
+      _showError('Passwords do not match.');
+      return;
+    }
+
+    if (mounted) {
+      setState(() {
+        _isLoading = true;
+      });
+    }
+
+    try {
+      if (_isLogin) {
+        await FirebaseAuth.instance.signInWithEmailAndPassword(
+          email: email,
+          password: password,
+        );
+      } else {
+        await FirebaseAuth.instance.createUserWithEmailAndPassword(
+          email: email,
+          password: password,
+        );
+      }
+
+      _emailController.clear();
+      _passwordController.clear();
+      _confirmPasswordController.clear();
+    } on FirebaseAuthException catch (e) {
+      debugPrint('FirebaseAuthException: ${e.code} - ${e.message}');
+
+      String errorMessage;
+
+      switch (e.code) {
+        case 'user-not-found':
+          errorMessage = 'No account found for that email.';
+          break;
+        case 'wrong-password':
+        case 'invalid-credential':
+          errorMessage = 'Incorrect email or password.';
+          break;
+        case 'email-already-in-use':
+          errorMessage = 'This email is already registered.';
+          break;
+        case 'invalid-email':
+          errorMessage = 'Invalid email format.';
+          break;
+        case 'weak-password':
+          errorMessage = 'Password must be at least 6 characters.';
+          break;
+        case 'operation-not-allowed':
+          errorMessage = 'Email/password sign-in is disabled in Firebase.';
+          break;
+        case 'network-request-failed':
+          errorMessage = 'Check your internet connection.';
+          break;
+        case 'too-many-requests':
+          errorMessage = 'Too many attempts. Please try again later.';
+          break;
+        case 'user-disabled':
+          errorMessage = 'This account has been disabled.';
+          break;
+        default:
+          errorMessage = e.message ?? 'Something went wrong. Please try again.';
+      }
+
+      _showError(errorMessage);
+    } catch (e) {
+      debugPrint('Unexpected auth error: $e');
+      _showError('Unexpected error: $e');
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+      }
+    }
+  }
+
+  void _showError(String message) {
+    if (!mounted) return;
+
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(
+        SnackBar(
+          content: Text(
+            message,
+            style: GoogleFonts.nunitoSans(fontWeight: FontWeight.bold),
+          ),
+          backgroundColor: const Color(0xFFFF453A),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+  }
+
+  void _toggleMode() {
+    setState(() {
+      _isLogin = !_isLogin;
+      _passwordController.clear();
+      _confirmPasswordController.clear();
+      _obscurePassword = true;
+      _obscureConfirmPassword = true;
+    });
   }
 
   @override
@@ -34,19 +167,18 @@ class _AuthScreenState extends State<AuthScreen> {
       backgroundColor: bgColor,
       body: SafeArea(
         child: SingleChildScrollView(
-          padding: const EdgeInsets.symmetric(horizontal: 32.0, vertical: 24.0),
+          padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 24),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.center,
             children: [
-              const SizedBox(height: 40),
-              
-              // Hero Image with glowing shadow
+              const SizedBox(height: 20),
+
               Container(
-                width: 240,
+                width: 200,
                 decoration: BoxDecoration(
                   boxShadow: [
                     BoxShadow(
-                      color: secondaryColor.withOpacity(0.3),
+                      color: secondaryColor.withValues(alpha: 0.3),
                       blurRadius: 40,
                       spreadRadius: -10,
                     ),
@@ -57,9 +189,8 @@ class _AuthScreenState extends State<AuthScreen> {
                   fit: BoxFit.contain,
                 ),
               ),
-              const SizedBox(height: 40),
+              const SizedBox(height: 32),
 
-              // Title
               RichText(
                 textAlign: TextAlign.center,
                 text: TextSpan(
@@ -70,14 +201,14 @@ class _AuthScreenState extends State<AuthScreen> {
                     height: 1.1,
                   ),
                   children: [
-                    const TextSpan(text: 'Level Up Your\n'),
+                    TextSpan(text: _isLogin ? 'Welcome\n' : 'Start Your\n'),
                     TextSpan(
-                      text: 'Daily Life',
+                      text: _isLogin ? 'Back' : 'Journey',
                       style: TextStyle(
                         color: primaryColor,
                         shadows: [
                           Shadow(
-                            color: primaryColor.withOpacity(0.5),
+                            color: primaryColor.withValues(alpha: 0.5),
                             blurRadius: 15,
                           ),
                         ],
@@ -88,9 +219,10 @@ class _AuthScreenState extends State<AuthScreen> {
               ),
               const SizedBox(height: 16),
 
-              // Subtitle
               Text(
-                'Track habits, complete chores, and maintain your streak.',
+                _isLogin
+                    ? 'Ready to maintain your streak?'
+                    : 'Level up your daily life today.',
                 textAlign: TextAlign.center,
                 style: GoogleFonts.nunitoSans(
                   fontSize: 16,
@@ -100,97 +232,116 @@ class _AuthScreenState extends State<AuthScreen> {
               ),
               const SizedBox(height: 48),
 
-              // Email Input
               _buildInputLabel('EMAIL'),
               const SizedBox(height: 8),
               _buildTextField(
                 controller: _emailController,
                 hintText: 'hello@example.com',
                 keyboardType: TextInputType.emailAddress,
+                textInputAction:
+                    _isLogin ? TextInputAction.done : TextInputAction.next,
               ),
               const SizedBox(height: 20),
 
-              // Password Input
               _buildInputLabel('PASSWORD'),
               const SizedBox(height: 8),
               _buildTextField(
                 controller: _passwordController,
                 hintText: '••••••••',
-                obscureText: true,
+                obscureText: _obscurePassword,
+                textInputAction:
+                    _isLogin ? TextInputAction.done : TextInputAction.next,
+                suffixIcon: IconButton(
+                  onPressed: () {
+                    setState(() {
+                      _obscurePassword = !_obscurePassword;
+                    });
+                  },
+                  icon: Icon(
+                    _obscurePassword ? Icons.visibility_off : Icons.visibility,
+                    color: mutedTextColor,
+                  ),
+                ),
               ),
+
+              if (!_isLogin) ...[
+                const SizedBox(height: 20),
+                _buildInputLabel('CONFIRM PASSWORD'),
+                const SizedBox(height: 8),
+                _buildTextField(
+                  controller: _confirmPasswordController,
+                  hintText: '••••••••',
+                  obscureText: _obscureConfirmPassword,
+                  textInputAction: TextInputAction.done,
+                  suffixIcon: IconButton(
+                    onPressed: () {
+                      setState(() {
+                        _obscureConfirmPassword = !_obscureConfirmPassword;
+                      });
+                    },
+                    icon: Icon(
+                      _obscureConfirmPassword
+                          ? Icons.visibility_off
+                          : Icons.visibility,
+                      color: mutedTextColor,
+                    ),
+                  ),
+                ),
+              ],
+
               const SizedBox(height: 32),
 
-              // Login Button
-              GestureDetector(
-                onTap: () {
-                  // TODO: Trigger Firebase Sign In
-                  print("Login Tapped");
-                },
-                child: Container(
-                  width: double.infinity,
-                  padding: const EdgeInsets.symmetric(vertical: 20),
-                  decoration: BoxDecoration(
-                    color: primaryColor,
-                    borderRadius: BorderRadius.circular(30),
-                    boxShadow: [
-                      BoxShadow(
-                        color: primaryColor.withOpacity(0.3),
-                        offset: const Offset(0, 10),
-                        blurRadius: 20,
-                        spreadRadius: -5,
-                      ),
-                    ],
-                  ),
-                  child: Center(
-                    child: Text(
-                      'Log In',
-                      style: GoogleFonts.poppins(
-                        fontSize: 20,
-                        fontWeight: FontWeight.w900,
-                        color: bgColor,
-                      ),
+              Material(
+                color: Colors.transparent,
+                child: InkWell(
+                  onTap: _isLoading ? null : _submitAuthForm,
+                  borderRadius: BorderRadius.circular(30),
+                  child: Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.symmetric(vertical: 20),
+                    decoration: BoxDecoration(
+                      color: primaryColor,
+                      borderRadius: BorderRadius.circular(30),
+                      boxShadow: [
+                        BoxShadow(
+                          color: primaryColor.withValues(alpha: 0.3),
+                          offset: const Offset(0, 10),
+                          blurRadius: 20,
+                          spreadRadius: -5,
+                        ),
+                      ],
+                    ),
+                    child: Center(
+                      child: _isLoading
+                          ? SizedBox(
+                              width: 28,
+                              height: 28,
+                              child: CircularProgressIndicator(
+                                color: bgColor,
+                                strokeWidth: 3,
+                              ),
+                            )
+                          : Text(
+                              _isLogin ? 'Log In' : 'Sign Up',
+                              style: GoogleFonts.poppins(
+                                fontSize: 20,
+                                fontWeight: FontWeight.w900,
+                                color: bgColor,
+                              ),
+                            ),
                     ),
                   ),
                 ),
               ),
               const SizedBox(height: 32),
 
-              // Divider
-              Row(
-                children: [
-                  Expanded(child: Divider(color: mutedColor, thickness: 1)),
-                  Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 16),
-                    child: Text(
-                      'OR JOIN WITH',
-                      style: GoogleFonts.nunitoSans(
-                        fontSize: 12,
-                        fontWeight: FontWeight.w800,
-                        color: mutedTextColor,
-                      ),
-                    ),
-                  ),
-                  Expanded(child: Divider(color: mutedColor, thickness: 1)),
-                ],
-              ),
-              const SizedBox(height: 24),
-
-              // Social Buttons
-              Row(
-                children: [
-                  Expanded(child: _buildSocialButton(Icons.g_mobiledata, 'Google')),
-                  const SizedBox(width: 16),
-                  Expanded(child: _buildSocialButton(Icons.apple, 'Apple')),
-                ],
-              ),
-              const SizedBox(height: 32),
-
-              // Sign Up Footer
               Row(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
                   Text(
-                    "Don't have an account? ",
+                    _isLogin
+                        ? "Don't have an account? "
+                        : "Already have an account? ",
                     style: GoogleFonts.nunitoSans(
                       fontSize: 14,
                       fontWeight: FontWeight.w700,
@@ -198,11 +349,9 @@ class _AuthScreenState extends State<AuthScreen> {
                     ),
                   ),
                   GestureDetector(
-                    onTap: () {
-                      // TODO: Navigate to Sign Up
-                    },
+                    onTap: _toggleMode,
                     child: Text(
-                      "Sign Up",
+                      _isLogin ? 'Sign Up' : 'Log In',
                       style: GoogleFonts.nunitoSans(
                         fontSize: 14,
                         fontWeight: FontWeight.w800,
@@ -220,12 +369,11 @@ class _AuthScreenState extends State<AuthScreen> {
     );
   }
 
-  // Helper Widget for Labels
   Widget _buildInputLabel(String text) {
     return Align(
       alignment: Alignment.centerLeft,
       child: Padding(
-        padding: const EdgeInsets.only(left: 8.0),
+        padding: const EdgeInsets.only(left: 8),
         child: Text(
           text,
           style: GoogleFonts.nunitoSans(
@@ -238,17 +386,24 @@ class _AuthScreenState extends State<AuthScreen> {
     );
   }
 
-  // Helper Widget for TextFields
   Widget _buildTextField({
     required TextEditingController controller,
     required String hintText,
     bool obscureText = false,
     TextInputType keyboardType = TextInputType.text,
+    TextInputAction textInputAction = TextInputAction.next,
+    Widget? suffixIcon,
   }) {
     return TextField(
       controller: controller,
       obscureText: obscureText,
       keyboardType: keyboardType,
+      textInputAction: textInputAction,
+      onSubmitted: (_) {
+        if (textInputAction == TextInputAction.done && !_isLoading) {
+          _submitAuthForm();
+        }
+      },
       style: GoogleFonts.nunitoSans(
         color: Colors.white,
         fontWeight: FontWeight.w600,
@@ -256,45 +411,25 @@ class _AuthScreenState extends State<AuthScreen> {
       ),
       decoration: InputDecoration(
         hintText: hintText,
-        hintStyle: TextStyle(color: mutedTextColor.withOpacity(0.5)),
+        hintStyle: TextStyle(color: mutedTextColor.withValues(alpha: 0.5)),
         filled: true,
         fillColor: cardColor,
-        contentPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
+        suffixIcon: suffixIcon,
+        contentPadding: const EdgeInsets.symmetric(
+          horizontal: 24,
+          vertical: 20,
+        ),
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(30),
           borderSide: BorderSide.none,
         ),
         focusedBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(30),
-          borderSide: BorderSide(color: primaryColor.withOpacity(0.5), width: 2),
-        ),
-      ),
-    );
-  }
-
-  // Helper Widget for Social Buttons
-  Widget _buildSocialButton(IconData icon, String label) {
-    return Container(
-      padding: const EdgeInsets.symmetric(vertical: 16),
-      decoration: BoxDecoration(
-        color: cardColor,
-        borderRadius: BorderRadius.circular(30),
-        border: Border.all(color: mutedColor.withOpacity(0.5)),
-      ),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(icon, color: Colors.white, size: 24),
-          const SizedBox(width: 8),
-          Text(
-            label,
-            style: GoogleFonts.nunitoSans(
-              color: Colors.white,
-              fontWeight: FontWeight.bold,
-              fontSize: 16,
-            ),
+          borderSide: BorderSide(
+            color: primaryColor.withValues(alpha: 0.5),
+            width: 2,
           ),
-        ],
+        ),
       ),
     );
   }
