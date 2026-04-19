@@ -10,6 +10,7 @@ import '../widgets/main_screen/overview_card.dart';
 import '../widgets/main_screen/priority_task_grid.dart';
 import '../widgets/main_screen/task_card.dart';
 import '../widgets/shared/app_bottom_nav_bar.dart';
+import 'add_task_screen.dart';
 
 class MainScreen extends StatefulWidget {
   const MainScreen({super.key});
@@ -72,7 +73,13 @@ class _MainScreenState extends State<MainScreen> {
       backgroundColor: AppColors.bg,
       extendBody: true,
       floatingActionButton: FloatingActionButton(
-        onPressed: _showAddTaskPlaceholder,
+        onPressed: () {
+        Navigator.push(
+          context,
+          MaterialPageRoute(builder: (_) => const AddTaskScreen()),
+        );
+      },
+
         backgroundColor: AppColors.primary,
         child: Icon(Icons.add_rounded, color: AppColors.bg, size: 28),
       ),

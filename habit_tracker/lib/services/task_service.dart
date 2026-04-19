@@ -25,9 +25,6 @@ class TaskService {
     return "${today.year}-${today.month.toString().padLeft(2, '0')}-${today.day.toString().padLeft(2, '0')}";
   }
 
-  // =============================
-  // CREATE TASK
-  // =============================
   Future<void> createTask(TaskModel task) async {
     await _taskCollection.doc(task.id).set({
       ...task.toMap(),
@@ -37,9 +34,6 @@ class TaskService {
     });
   }
 
-  // =============================
-  // READ ACTIVE TASKS
-  // =============================
   Stream<List<TaskModel>> getActiveTasks() {
     return _taskCollection
         .where('isDeleted', isEqualTo: false)
@@ -59,9 +53,6 @@ class TaskService {
     });
   }
 
-  // =============================
-  // READ DELETED TASKS
-  // =============================
   Stream<List<TaskModel>> getDeletedTasks() {
     return _taskCollection
         .where('isDeleted', isEqualTo: true)
@@ -73,9 +64,6 @@ class TaskService {
     });
   }
 
-  // =============================
-  // UPDATE TASK
-  // =============================
   Future<void> updateTask(TaskModel task) async {
     await _taskCollection.doc(task.id).update({
       'title': task.title,
@@ -87,24 +75,24 @@ class TaskService {
       'isDone': task.isDone,
       'isPriority': task.isPriority,
       'isDeleted': task.isDeleted,
+      'repeatDays': task.repeatDays,
+      'remindersEnabled': task.remindersEnabled,
+      'reminders': task.reminders,
+      'startDate': task.startDate,
+      'endDate': task.endDate,
       'updatedAt': FieldValue.serverTimestamp(),
     });
   }
 
-  // =============================
-  // TOGGLE COMPLETE (TASK + TODAY LOG)
-  // =============================
   Future<void> toggleTaskCompletion(TaskModel task) async {
     final dateKey = _todayKey();
     final newValue = !task.isDone;
 
-    // update task document so UI can immediately reflect status
     await _taskCollection.doc(task.id).update({
       'isDone': newValue,
       'updatedAt': FieldValue.serverTimestamp(),
     });
 
-    // keep today's log in sync
     final logQuery = await _logCollection
         .where('taskId', isEqualTo: task.id)
         .where('date', isEqualTo: dateKey)
@@ -125,9 +113,6 @@ class TaskService {
     }
   }
 
-  // =============================
-  // SOFT DELETE
-  // =============================
   Future<void> softDeleteTask(String taskId) async {
     await _taskCollection.doc(taskId).update({
       'isDeleted': true,
@@ -136,9 +121,6 @@ class TaskService {
     });
   }
 
-  // =============================
-  // RESTORE TASK
-  // =============================
   Future<void> restoreTask(String taskId) async {
     await _taskCollection.doc(taskId).update({
       'isDeleted': false,
@@ -147,9 +129,6 @@ class TaskService {
     });
   }
 
-  // =============================
-  // HARD DELETE
-  // =============================
   Future<void> hardDeleteTask(String taskId) async {
     final logs = await _logCollection.where('taskId', isEqualTo: taskId).get();
 
