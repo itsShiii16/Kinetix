@@ -11,6 +11,7 @@ import '../widgets/main_screen/priority_task_grid.dart';
 import '../widgets/main_screen/task_card.dart';
 import '../widgets/shared/app_bottom_nav_bar.dart';
 import 'add_task_screen.dart';
+import 'archive_screen.dart';
 import 'edit_task_screen.dart';
 
 class MainScreen extends StatefulWidget {
@@ -78,6 +79,13 @@ class _MainScreenState extends State<MainScreen> {
     );
   }
 
+  Future<void> _openArchiveScreen() async {
+    await Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => const ArchiveScreen()),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -137,7 +145,7 @@ class _MainScreenState extends State<MainScreen> {
                           onTaskTap: (task) => () => _openEditTaskScreen(task),
                         ),
                         const SizedBox(height: 28),
-                        _buildSectionTitle('Task Groups'),
+                        _buildTaskGroupsHeader(),
                         const SizedBox(height: 14),
                         CategoryTabs(
                           selectedTab: _selectedTab,
@@ -178,11 +186,11 @@ class _MainScreenState extends State<MainScreen> {
                                   builder: (context) => AlertDialog(
                                     backgroundColor: AppColors.card,
                                     title: const Text(
-                                      'Soft delete task?',
+                                      'Move task to Archive?',
                                       style: TextStyle(color: Colors.white),
                                     ),
                                     content: Text(
-                                      'This task will be moved out of the active list.',
+                                      'You can restore it later from the Archive screen.',
                                       style: TextStyle(
                                         color: AppColors.mutedText,
                                       ),
@@ -201,7 +209,7 @@ class _MainScreenState extends State<MainScreen> {
                                       TextButton(
                                         onPressed: () =>
                                             Navigator.pop(context, true),
-                                        child: const Text('Delete'),
+                                        child: const Text('Archive'),
                                       ),
                                     ],
                                   ),
@@ -209,6 +217,22 @@ class _MainScreenState extends State<MainScreen> {
 
                                 if (result == true) {
                                   await _taskService.softDeleteTask(task.id);
+
+                                  if (!mounted) return false;
+
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    SnackBar(
+                                      content: const Text(
+                                        'Task moved to Archive',
+                                      ),
+                                      action: SnackBarAction(
+                                        label: 'Undo',
+                                        onPressed: () {
+                                          _taskService.restoreTask(task.id);
+                                        },
+                                      ),
+                                    ),
+                                  );
                                 }
 
                                 return false;
@@ -223,7 +247,7 @@ class _MainScreenState extends State<MainScreen> {
                                   horizontal: 20,
                                 ),
                                 child: const Icon(
-                                  Icons.delete_outline_rounded,
+                                  Icons.archive_outlined,
                                   color: Colors.white,
                                 ),
                               ),
@@ -244,6 +268,39 @@ class _MainScreenState extends State<MainScreen> {
         ),
       ),
       bottomNavigationBar: const AppBottomNavBar(currentIndex: 0),
+    );
+  }
+
+  Widget _buildTaskGroupsHeader() {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: [
+        _buildSectionTitle('Task Groups'),
+        TextButton.icon(
+          onPressed: _openArchiveScreen,
+          icon: Icon(
+            Icons.archive_outlined,
+            color: AppColors.secondary,
+            size: 18,
+          ),
+          label: Text(
+            'Archive',
+            style: GoogleFonts.nunitoSans(
+              fontSize: 14,
+              fontWeight: FontWeight.w800,
+              color: AppColors.secondary,
+            ),
+          ),
+          style: TextButton.styleFrom(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            backgroundColor: AppColors.card,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(14),
+              side: BorderSide(color: AppColors.muted.withOpacity(0.45)),
+            ),
+          ),
+        ),
+      ],
     );
   }
 

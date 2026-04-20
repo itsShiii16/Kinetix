@@ -105,11 +105,24 @@ class _EditTaskScreenState extends State<EditTaskScreen> {
     await _taskService.softDeleteTask(widget.task.id);
 
     if (!mounted) return;
+
     Navigator.pop(context);
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: const Text('Task moved to Recently Deleted'),
+        action: SnackBarAction(
+          label: 'Undo',
+          onPressed: () {
+            _taskService.restoreTask(widget.task.id);
+          },
+        ),
+      ),
+    );
   }
 
   Future<void> _confirmDelete() async {
-    final result = await showModalBottomSheet<String>(
+    final shouldDelete = await showModalBottomSheet<bool>(
       context: context,
       backgroundColor: AppColors.card,
       shape: const RoundedRectangleBorder(
@@ -122,17 +135,18 @@ class _EditTaskScreenState extends State<EditTaskScreen> {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                Text(
-                  'Delete Task',
+                const Text(
+                  'Move task to Recently Deleted?',
                   style: TextStyle(
                     color: Colors.white,
                     fontSize: 20,
                     fontWeight: FontWeight.w700,
                   ),
+                  textAlign: TextAlign.center,
                 ),
                 const SizedBox(height: 10),
                 Text(
-                  'Choose how you want to delete this task.',
+                  'You can restore it later from Archive.',
                   textAlign: TextAlign.center,
                   style: TextStyle(
                     color: AppColors.mutedText,
@@ -143,29 +157,17 @@ class _EditTaskScreenState extends State<EditTaskScreen> {
                 SizedBox(
                   width: double.infinity,
                   child: ElevatedButton(
-                    onPressed: () => Navigator.pop(context, 'soft'),
+                    onPressed: () => Navigator.pop(context, true),
                     style: ElevatedButton.styleFrom(
                       backgroundColor: AppColors.primary,
                       foregroundColor: AppColors.bg,
                     ),
-                    child: const Text('Soft Delete'),
-                  ),
-                ),
-                const SizedBox(height: 10),
-                SizedBox(
-                  width: double.infinity,
-                  child: ElevatedButton(
-                    onPressed: () => Navigator.pop(context, 'hard'),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: AppColors.destructive,
-                      foregroundColor: Colors.white,
-                    ),
-                    child: const Text('Hard Delete'),
+                    child: const Text('Move to Archive'),
                   ),
                 ),
                 const SizedBox(height: 10),
                 TextButton(
-                  onPressed: () => Navigator.pop(context),
+                  onPressed: () => Navigator.pop(context, false),
                   child: Text(
                     'Cancel',
                     style: TextStyle(color: AppColors.mutedText),
@@ -178,12 +180,8 @@ class _EditTaskScreenState extends State<EditTaskScreen> {
       },
     );
 
-    if (result == 'soft') {
+    if (shouldDelete == true) {
       await _softDeleteTask();
-    } else if (result == 'hard') {
-      await _taskService.hardDeleteTask(widget.task.id);
-      if (!mounted) return;
-      Navigator.pop(context);
     }
   }
 
