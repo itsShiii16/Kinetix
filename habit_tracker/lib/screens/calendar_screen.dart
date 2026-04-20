@@ -1,5 +1,14 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+
+import '../models/task_model.dart';
+import '../services/task_service.dart';
+import '../utils/app_colors.dart';
+import '../widgets/shared/app_bottom_nav_bar.dart';
+import 'add_task_screen.dart';
+import 'edit_task_screen.dart';
 
 class CalendarScreen extends StatefulWidget {
   const CalendarScreen({super.key});
@@ -9,39 +18,369 @@ class CalendarScreen extends StatefulWidget {
 }
 
 class _CalendarScreenState extends State<CalendarScreen> {
-  // Kinetix Theme Colors
-  final Color bgColor = const Color(0xFF151515);
-  final Color primaryColor = const Color(0xFFD4FF00); // Neon Lime
-  final Color secondaryColor = const Color(0xFFB4A6FF); // Pastel Purple
-  final Color cardColor = const Color(0xFF2A2A2C);
-  final Color mutedColor = const Color(0xFF3A3A3C);
-  final Color mutedTextColor = const Color(0xFF8E8E93);
-  final Color destructiveColor = const Color(0xFFFF453A); // Red
+  final TaskService _taskService = TaskService();
+  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+  final FirebaseAuth _auth = FirebaseAuth.instance;
+
+  late DateTime _focusedMonth;
+  late DateTime _selectedDate;
+
+  @override
+  void initState() {
+    super.initState();
+    final now = DateTime.now();
+    _focusedMonth = DateTime(now.year, now.month, 1);
+    _selectedDate = DateTime(now.year, now.month, now.day);
+  }
+
+  String get _userId {
+    final user = _auth.currentUser;
+    if (user == null) {
+      throw Exception('User not logged in');
+    }
+    return user.uid;
+  }
+
+  Stream<QuerySnapshot<Map<String, dynamic>>> _logsStream() {
+    return _firestore
+        .collection('users')
+        .doc(_userId)
+        .collection('task_logs')
+        .snapshots();
+  }
+
+  String _dateKey(DateTime date) =>
+      "${date.year}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}";
+
+  DateTime _dateOnly(DateTime date) => DateTime(date.year, date.month, date.day);
+
+  bool _isSameDate(DateTime a, DateTime b) =>
+      a.year == b.year && a.month == b.month && a.day == b.day;
+
+  bool _isSameMonth(DateTime a, DateTime b) =>
+      a.year == b.year && a.month == b.month;
+
+  String _weekdayLabel(DateTime date) {
+    switch (date.weekday) {
+      case DateTime.monday:
+        return 'M';
+      case DateTime.tuesday:
+        return 'T';
+      case DateTime.wednesday:
+        return 'W';
+      case DateTime.thursday:
+        return 'Th';
+      case DateTime.friday:
+        return 'F';
+      case DateTime.saturday:
+        return 'Sa';
+      case DateTime.sunday:
+        return 'Su';
+      default:
+        return '';
+    }
+  }
+
+  DateTime? _parseStorageDate(String? value) {
+    if (value == null || value.trim().isEmpty) return null;
+
+    try {
+      final parts = value.split('-');
+      if (parts.length != 3) return null;
+
+      return DateTime(
+        int.parse(parts[0]),
+        int.parse(parts[1]),
+        int.parse(parts[2]),
+      );
+    } catch (_) {
+      return null;
+    }
+  }
+
+  bool _isTaskScheduledForDate(TaskModel task, DateTime date) {
+    final normalizedDate = _dateOnly(date);
+    final startDate = _parseStorageDate(task.startDate);
+    final endDate = _parseStorageDate(task.endDate);
+
+    if (startDate != null &&
+        normalizedDate.isBefore(_dateOnly(startDate))) {
+      return false;
+    }
+
+    if (endDate != null &&
+        normalizedDate.isAfter(_dateOnly(endDate))) {
+      return false;
+    }
+
+    if (task.repeatDays.isEmpty) {
+      return true;
+    }
+
+    return task.repeatDays.contains(_weekdayLabel(normalizedDate));
+  }
+
+  List<DateTime?> _getCalendarDaysForMonth(DateTime month) {
+    final firstDayOfMonth = DateTime(month.year, month.month, 1);
+    final daysInMonth = DateTime(month.year, month.month + 1, 0).day;
+
+    final startWeekday = firstDayOfMonth.weekday % 7; // Sunday = 0
+    final cells = <DateTime?>[];
+
+    for (int i = 0; i < startWeekday; i++) {
+      cells.add(null);
+    }
+
+    for (int day = 1; day <= daysInMonth; day++) {
+      cells.add(DateTime(month.year, month.month, day));
+    }
+
+    while (cells.length < 42) {
+      cells.add(null);
+    }
+
+    return cells;
+  }
+
+  Map<String, bool> _buildLogMap(QuerySnapshot<Map<String, dynamic>> snapshot) {
+    final map = <String, bool>{};
+
+    for (final doc in snapshot.docs) {
+      final data = doc.data();
+      final taskId = data['taskId']?.toString();
+      final date = data['date']?.toString();
+      final isCompleted = data['isCompleted'] == true;
+
+      if (taskId != null && date != null) {
+        map['$date|$taskId'] = isCompleted;
+      }
+    }
+
+    return map;
+  }
+
+  List<TaskModel> _tasksForDate(List<TaskModel> tasks, DateTime date) {
+    return tasks.where((task) {
+      if (task.isDeleted) return false;
+      return _isTaskScheduledForDate(task, date);
+    }).toList();
+  }
+
+  bool _isDayFullyCompleted(
+    DateTime date,
+    List<TaskModel> allTasks,
+    Map<String, bool> logMap,
+  ) {
+    final dayTasks = _tasksForDate(allTasks, date);
+    if (dayTasks.isEmpty) return false;
+
+    final dateKey = _dateKey(date);
+    return dayTasks.every((task) => logMap['$dateKey|${task.id}'] == true);
+  }
+
+  Set<DateTime> _getVisibleStreakDaysForMonth(
+    DateTime month,
+    List<TaskModel> tasks,
+    Map<String, bool> logMap,
+  ) {
+    final result = <DateTime>{};
+
+    final firstDay = DateTime(month.year, month.month, 1);
+    final lastDay = DateTime(month.year, month.month + 1, 0);
+
+    int streakCount = 0;
+    final currentRun = <DateTime>[];
+
+    DateTime cursor = firstDay;
+    while (!cursor.isAfter(lastDay)) {
+      final normalized = _dateOnly(cursor);
+
+      if (_isDayFullyCompleted(normalized, tasks, logMap)) {
+        streakCount++;
+        currentRun.add(normalized);
+      } else {
+        if (streakCount >= 3) {
+          result.addAll(currentRun);
+        }
+        streakCount = 0;
+        currentRun.clear();
+      }
+
+      cursor = cursor.add(const Duration(days: 1));
+    }
+
+    if (streakCount >= 3) {
+      result.addAll(currentRun);
+    }
+
+    return result;
+  }
+
+  int _getCurrentStreak(List<TaskModel> tasks, Map<String, bool> logMap) {
+    int streak = 0;
+    DateTime cursor = _dateOnly(DateTime.now());
+
+    while (_isDayFullyCompleted(cursor, tasks, logMap)) {
+      streak++;
+      cursor = cursor.subtract(const Duration(days: 1));
+    }
+
+    return streak;
+  }
+
+  Future<void> _toggleTaskForSelectedDate(TaskModel task) async {
+    final selectedKey = _dateKey(_selectedDate);
+    final isToday = _isSameDate(_selectedDate, DateTime.now());
+
+    if (isToday) {
+      await _taskService.toggleTaskCompletion(task);
+      return;
+    }
+
+    final logQuery = await _firestore
+        .collection('users')
+        .doc(_userId)
+        .collection('task_logs')
+        .where('taskId', isEqualTo: task.id)
+        .where('date', isEqualTo: selectedKey)
+        .get();
+
+    if (logQuery.docs.isNotEmpty) {
+      final doc = logQuery.docs.first;
+      final current = doc.data()['isCompleted'] == true;
+
+      await doc.reference.update({
+        'isCompleted': !current,
+      });
+    } else {
+      await _firestore
+          .collection('users')
+          .doc(_userId)
+          .collection('task_logs')
+          .add({
+        'taskId': task.id,
+        'category': task.category,
+        'date': selectedKey,
+        'isCompleted': true,
+        'createdAt': FieldValue.serverTimestamp(),
+      });
+    }
+  }
+
+  String _formatMonthYear(DateTime date) {
+    const months = [
+      'January',
+      'February',
+      'March',
+      'April',
+      'May',
+      'June',
+      'July',
+      'August',
+      'September',
+      'October',
+      'November',
+      'December',
+    ];
+    return '${months[date.month - 1]} ${date.year}';
+  }
+
+  String _formatSelectedActivityDate(DateTime date) {
+    const months = [
+      'Jan',
+      'Feb',
+      'Mar',
+      'Apr',
+      'May',
+      'Jun',
+      'Jul',
+      'Aug',
+      'Sep',
+      'Oct',
+      'Nov',
+      'Dec',
+    ];
+    return '${months[date.month - 1]} ${date.day}, ${date.year}';
+  }
 
   @override
   Widget build(BuildContext context) {
+    final currentMonthDates = _getCalendarDaysForMonth(_focusedMonth);
+
     return Scaffold(
-      backgroundColor: bgColor,
-      extendBody: true, // For the floating nav bar
+      backgroundColor: AppColors.bg,
+      extendBody: true,
       body: SafeArea(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.only(bottom: 120),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              _buildHeader(),
-              _buildMonthSelector(),
-              _buildCalendarGrid(),
-              _buildActivitySection(),
-            ],
-          ),
+        child: StreamBuilder<List<TaskModel>>(
+          stream: _taskService.getActiveTasks(),
+          builder: (context, taskSnapshot) {
+            if (taskSnapshot.connectionState == ConnectionState.waiting) {
+              return const Center(child: CircularProgressIndicator());
+            }
+
+            if (taskSnapshot.hasError) {
+              return Center(
+                child: Text(
+                  'Failed to load tasks.',
+                  style: GoogleFonts.nunitoSans(color: Colors.white),
+                ),
+              );
+            }
+
+            final tasks = taskSnapshot.data ?? [];
+
+            return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+              stream: _logsStream(),
+              builder: (context, logSnapshot) {
+                if (logSnapshot.connectionState == ConnectionState.waiting) {
+                  return const Center(child: CircularProgressIndicator());
+                }
+
+                if (logSnapshot.hasError) {
+                  return Center(
+                    child: Text(
+                      'Failed to load task logs.',
+                      style: GoogleFonts.nunitoSans(color: Colors.white),
+                    ),
+                  );
+                }
+
+                final logMap = _buildLogMap(logSnapshot.data!);
+                final monthStreakDays =
+                    _getVisibleStreakDaysForMonth(_focusedMonth, tasks, logMap);
+                final currentStreak = _getCurrentStreak(tasks, logMap);
+
+                return SingleChildScrollView(
+                  padding: const EdgeInsets.only(bottom: 120),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      _buildHeader(currentStreak),
+                      _buildMonthSelector(),
+                      _buildCalendarGrid(
+                        currentMonthDates,
+                        monthStreakDays,
+                        tasks,
+                        logMap,
+                      ),
+                      _buildActivitySection(tasks, logMap),
+                    ],
+                  ),
+                );
+              },
+            );
+          },
         ),
       ),
-      bottomNavigationBar: _buildFloatingNavBar(),
+      bottomNavigationBar: const AppBottomNavBar(currentIndex: 1),
     );
   }
 
-  Widget _buildHeader() {
+  Widget _buildHeader(int currentStreak) {
+    final streakText = currentStreak >= 3
+        ? '$currentStreak day streak! 🔥'
+        : 'Build a 3-day streak to light it up.';
+
     return Padding(
       padding: const EdgeInsets.fromLTRB(24, 32, 24, 16),
       child: Row(
@@ -60,35 +399,43 @@ class _CalendarScreenState extends State<CalendarScreen> {
                 ),
               ),
               Text(
-                '12 day streak! 🔥',
+                streakText,
                 style: GoogleFonts.nunitoSans(
                   fontSize: 16,
                   fontWeight: FontWeight.bold,
-                  color: secondaryColor,
+                  color: AppColors.secondary,
                 ),
               ),
             ],
           ),
-          // Add New Chore/Event Button
-          GestureDetector(
-            onTap: () {
-              // TODO: Trigger Firebase Create functionality for a specific date
-            },
-            child: Container(
-              width: 50,
-              height: 50,
-              decoration: BoxDecoration(
-                color: primaryColor,
-                shape: BoxShape.circle,
-                boxShadow: [
-                  BoxShadow(
-                    color: primaryColor.withOpacity(0.4),
-                    blurRadius: 15,
-                    spreadRadius: 2,
+          Material(
+            color: Colors.transparent,
+            child: InkWell(
+              borderRadius: BorderRadius.circular(25),
+              onTap: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => const AddTaskScreen(),
                   ),
-                ],
+                );
+              },
+              child: Container(
+                width: 50,
+                height: 50,
+                decoration: BoxDecoration(
+                  color: AppColors.primary,
+                  shape: BoxShape.circle,
+                  boxShadow: [
+                    BoxShadow(
+                      color: AppColors.primary.withOpacity(0.4),
+                      blurRadius: 15,
+                      spreadRadius: 2,
+                    ),
+                  ],
+                ),
+                child: Icon(Icons.add_rounded, color: AppColors.bg, size: 32),
               ),
-              child: Icon(Icons.add_rounded, color: bgColor, size: 32),
             ),
           ),
         ],
@@ -102,29 +449,80 @@ class _CalendarScreenState extends State<CalendarScreen> {
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          Icon(Icons.arrow_back_ios_rounded, color: mutedTextColor, size: 20),
+          IconButton(
+            icon: Icon(
+              Icons.arrow_back_ios_rounded,
+              color: AppColors.mutedText,
+              size: 20,
+            ),
+            onPressed: () {
+              setState(() {
+                _focusedMonth = DateTime(
+                  _focusedMonth.year,
+                  _focusedMonth.month - 1,
+                  1,
+                );
+
+                if (!_isSameMonth(_selectedDate, _focusedMonth)) {
+                  _selectedDate = DateTime(
+                    _focusedMonth.year,
+                    _focusedMonth.month,
+                    1,
+                  );
+                }
+              });
+            },
+          ),
           Text(
-            'April 2026', // Updated to current context
+            _formatMonthYear(_focusedMonth),
             style: GoogleFonts.poppins(
               fontSize: 20,
               fontWeight: FontWeight.w900,
               color: Colors.white,
             ),
           ),
-          Icon(Icons.arrow_forward_ios_rounded, color: mutedTextColor, size: 20),
+          IconButton(
+            icon: Icon(
+              Icons.arrow_forward_ios_rounded,
+              color: AppColors.mutedText,
+              size: 20,
+            ),
+            onPressed: () {
+              setState(() {
+                _focusedMonth = DateTime(
+                  _focusedMonth.year,
+                  _focusedMonth.month + 1,
+                  1,
+                );
+
+                if (!_isSameMonth(_selectedDate, _focusedMonth)) {
+                  _selectedDate = DateTime(
+                    _focusedMonth.year,
+                    _focusedMonth.month,
+                    1,
+                  );
+                }
+              });
+            },
+          ),
         ],
       ),
     );
   }
 
-  Widget _buildCalendarGrid() {
+  Widget _buildCalendarGrid(
+    List<DateTime?> monthCells,
+    Set<DateTime> streakDays,
+    List<TaskModel> tasks,
+    Map<String, bool> logMap,
+  ) {
     return Container(
       margin: const EdgeInsets.all(24),
       padding: const EdgeInsets.all(24),
       decoration: BoxDecoration(
-        color: cardColor,
+        color: AppColors.card,
         borderRadius: BorderRadius.circular(32),
-        border: Border.all(color: mutedColor.withOpacity(0.5)),
+        border: Border.all(color: AppColors.muted.withOpacity(0.5)),
         boxShadow: [
           BoxShadow(
             color: Colors.black.withOpacity(0.2),
@@ -135,139 +533,137 @@ class _CalendarScreenState extends State<CalendarScreen> {
       ),
       child: Column(
         children: [
-          // Days of the week header
           Row(
-            mainAxisAlignment: MainAxisAlignment.spaceAround,
-            children: ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((day) {
-              return Expanded(
-                child: Text(
-                  day,
-                  textAlign: TextAlign.center,
-                  style: GoogleFonts.nunitoSans(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w900,
-                    color: mutedTextColor,
-                    letterSpacing: 1,
+            children: ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
+                .map(
+                  (day) => Expanded(
+                    child: Text(
+                      day,
+                      textAlign: TextAlign.center,
+                      style: GoogleFonts.nunitoSans(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w900,
+                        color: AppColors.mutedText,
+                        letterSpacing: 1,
+                      ),
+                    ),
                   ),
-                ),
-              );
-            }).toList(),
+                )
+                .toList(),
           ),
           const SizedBox(height: 16),
-          
-          // Recreated layout matching your mockup using responsive row stacks
-          _buildCalendarRow(
-            days: ['1', '2', '3', '4', '5', '6', '7'],
-            streakStartIdx: 0,
-            streakLength: 4,
-            streakColor: primaryColor,
-          ),
-          _buildCalendarRow(
-            days: ['8', '9', '10', '11', '12', '13', '14'],
-            streakStartIdx: 1,
-            streakLength: 5,
-            streakColor: secondaryColor,
-          ),
-          _buildCalendarRow(
-            days: ['15', '16', '17', '18', '19', '20', '21'],
-            streakStartIdx: -1, // No streak
-            streakLength: 0,
-            streakColor: Colors.transparent,
-          ),
-          _buildCalendarRow(
-            days: ['22', '23', '24', '25', '26', '27', '28'],
-            streakStartIdx: 0,
-            streakLength: 3,
-            streakColor: primaryColor,
-            selectedDay: '24',
-          ),
-        ],
-      ),
-    );
-  }
+          ...List.generate(6, (rowIndex) {
+            final rowItems = monthCells.skip(rowIndex * 7).take(7).toList();
+            return Padding(
+              padding: const EdgeInsets.symmetric(vertical: 8),
+              child: Row(
+                children: rowItems.map((date) {
+                  if (date == null) {
+                    return const Expanded(child: SizedBox(height: 48));
+                  }
 
-  // Helper to build a responsive row with a background streak
-  Widget _buildCalendarRow({
-    required List<String> days,
-    required int streakStartIdx,
-    required int streakLength,
-    required Color streakColor,
-    String? selectedDay,
-  }) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 8.0),
-      child: Stack(
-        alignment: Alignment.center,
-        children: [
-          // Background Streak Bar
-          if (streakStartIdx != -1)
-            Positioned(
-              left: (MediaQuery.of(context).size.width - 96) / 7 * streakStartIdx,
-              width: (MediaQuery.of(context).size.width - 96) / 7 * streakLength,
-              height: 40,
-              child: Container(
-                decoration: BoxDecoration(
-                  color: streakColor.withOpacity(0.15),
-                  borderRadius: BorderRadius.circular(20),
-                  border: Border.all(color: streakColor.withOpacity(0.3)),
-                ),
-              ),
-            ),
-          
-          // The Numbers
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceAround,
-            children: days.map((day) {
-              bool isStreak = days.indexOf(day) >= streakStartIdx && days.indexOf(day) < streakStartIdx + streakLength;
-              bool isSelected = day == selectedDay;
+                  final normalizedDate = _dateOnly(date);
+                  final isSelected = _isSameDate(normalizedDate, _selectedDate);
+                  final isToday = _isSameDate(normalizedDate, DateTime.now());
+                  final isCompletedDay =
+                      _isDayFullyCompleted(normalizedDate, tasks, logMap);
+                  final isPartOfValidStreak = streakDays.contains(normalizedDate);
 
-              return Expanded(
-                child: Center(
-                  child: isSelected
-                      ? Container(
-                          width: 32,
-                          height: 32,
-                          decoration: BoxDecoration(
-                            color: primaryColor,
-                            shape: BoxShape.circle,
-                            border: Border.all(color: primaryColor.withOpacity(0.3), width: 4),
-                          ),
-                          child: Center(
-                            child: Text(
-                              day,
-                              style: GoogleFonts.nunitoSans(
-                                fontSize: 14,
-                                fontWeight: FontWeight.w900,
-                                color: bgColor,
-                              ),
-                            ),
-                          ),
-                        )
-                      : Text(
-                          day,
-                          style: GoogleFonts.nunitoSans(
-                            fontSize: 16,
-                            fontWeight: isStreak ? FontWeight.w900 : FontWeight.bold,
-                            color: isStreak ? streakColor : mutedTextColor,
-                          ),
+                  Color textColor = AppColors.mutedText;
+                  FontWeight fontWeight = FontWeight.bold;
+
+                  if (isPartOfValidStreak) {
+                    textColor = AppColors.primary;
+                    fontWeight = FontWeight.w900;
+                  } else if (isCompletedDay) {
+                    textColor = Colors.white;
+                    fontWeight = FontWeight.w800;
+                  }
+
+                  return Expanded(
+                    child: GestureDetector(
+                      onTap: () {
+                        setState(() {
+                          _selectedDate = normalizedDate;
+                        });
+                      },
+                      child: Container(
+                        height: 48,
+                        color: Colors.transparent,
+                        child: Center(
+                          child: isSelected
+                              ? Container(
+                                  width: 34,
+                                  height: 34,
+                                  decoration: BoxDecoration(
+                                    color: AppColors.primary,
+                                    shape: BoxShape.circle,
+                                    border: Border.all(
+                                      color: AppColors.primary.withOpacity(0.3),
+                                      width: 4,
+                                    ),
+                                  ),
+                                  child: Center(
+                                    child: Text(
+                                      '${normalizedDate.day}',
+                                      style: GoogleFonts.nunitoSans(
+                                        fontSize: 14,
+                                        fontWeight: FontWeight.w900,
+                                        color: AppColors.bg,
+                                      ),
+                                    ),
+                                  ),
+                                )
+                              : Container(
+                                  width: 34,
+                                  height: 34,
+                                  decoration: isToday
+                                      ? BoxDecoration(
+                                          shape: BoxShape.circle,
+                                          border: Border.all(
+                                            color: AppColors.secondary
+                                                .withOpacity(0.6),
+                                          ),
+                                        )
+                                      : null,
+                                  child: Center(
+                                    child: Text(
+                                      '${normalizedDate.day}',
+                                      style: GoogleFonts.nunitoSans(
+                                        fontSize: 16,
+                                        fontWeight: fontWeight,
+                                        color: textColor,
+                                      ),
+                                    ),
+                                  ),
+                                ),
                         ),
-                ),
-              );
-            }).toList(),
-          ),
+                      ),
+                    ),
+                  );
+                }).toList(),
+              ),
+            );
+          }),
         ],
       ),
     );
   }
 
-  Widget _buildActivitySection() {
+  Widget _buildActivitySection(
+    List<TaskModel> allTasks,
+    Map<String, bool> logMap,
+  ) {
+    final selectedTasks = _tasksForDate(allTasks, _selectedDate);
+    final selectedKey = _dateKey(_selectedDate);
+
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 24),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            'Activity for Apr 24',
+            'Tasks for ${_formatSelectedActivityDate(_selectedDate)}',
             style: GoogleFonts.poppins(
               fontSize: 20,
               fontWeight: FontWeight.bold,
@@ -275,112 +671,116 @@ class _CalendarScreenState extends State<CalendarScreen> {
             ),
           ),
           const SizedBox(height: 16),
-          _buildActivityCard(
-            title: 'Daily Exercise',
-            time: 'Completed at 08:30 AM',
-            color: primaryColor,
-            isCompleted: true,
-          ),
-          const SizedBox(height: 12),
-          _buildActivityCard(
-            title: 'Reading Session',
-            time: 'Skipped',
-            color: secondaryColor,
-            isCompleted: false,
-          ),
+          if (selectedTasks.isEmpty)
+            Center(
+              child: Padding(
+                padding: const EdgeInsets.all(20),
+                child: Text(
+                  'No tasks scheduled for this day.',
+                  style: GoogleFonts.nunitoSans(
+                    color: AppColors.mutedText,
+                    fontStyle: FontStyle.italic,
+                  ),
+                ),
+              ),
+            ),
+          ...selectedTasks.map((task) {
+            final isCompleted = logMap['$selectedKey|${task.id}'] == true;
+            final timeText = task.remindersEnabled && task.reminders.isNotEmpty
+                ? 'Reminder: ${task.reminders.join(', ')}'
+                : 'No reminder';
+
+            return Padding(
+              padding: const EdgeInsets.only(bottom: 12),
+              child: _buildActivityCard(
+                task: task,
+                time: timeText,
+                isCompleted: isCompleted,
+              ),
+            );
+          }),
         ],
       ),
     );
   }
 
   Widget _buildActivityCard({
-    required String title,
+    required TaskModel task,
     required String time,
-    required Color color,
     required bool isCompleted,
   }) {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: cardColor.withOpacity(isCompleted ? 1.0 : 0.6),
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
         borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: mutedColor.withOpacity(0.5)),
-      ),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          Row(
+        onTap: () {
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (_) => EditTaskScreen(task: task),
+            ),
+          );
+        },
+        onLongPress: () async {
+          await _toggleTaskForSelectedDate(task);
+        },
+        child: Container(
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: AppColors.card.withOpacity(isCompleted ? 1.0 : 0.6),
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(color: AppColors.muted.withOpacity(0.5)),
+          ),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Container(
-                width: 4,
-                height: 40,
-                decoration: BoxDecoration(
-                  color: color,
-                  borderRadius: BorderRadius.circular(2),
+              Expanded(
+                child: Row(
+                  children: [
+                    Container(
+                      width: 4,
+                      height: 40,
+                      decoration: BoxDecoration(
+                        color: task.color,
+                        borderRadius: BorderRadius.circular(2),
+                      ),
+                    ),
+                    const SizedBox(width: 16),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            task.title,
+                            style: GoogleFonts.nunitoSans(
+                              fontSize: 16,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.white,
+                            ),
+                          ),
+                          Text(
+                            '${task.category} • $time',
+                            style: GoogleFonts.nunitoSans(
+                              fontSize: 14,
+                              color: AppColors.mutedText,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
                 ),
               ),
-              const SizedBox(width: 16),
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    title,
-                    style: GoogleFonts.nunitoSans(
-                      fontSize: 16,
-                      fontWeight: FontWeight.bold,
-                      color: Colors.white,
-                    ),
-                  ),
-                  Text(
-                    time,
-                    style: GoogleFonts.nunitoSans(
-                      fontSize: 14,
-                      color: mutedTextColor,
-                    ),
-                  ),
-                ],
+              const SizedBox(width: 12),
+              Icon(
+                isCompleted
+                    ? Icons.check_circle_rounded
+                    : Icons.circle_outlined,
+                color: isCompleted ? AppColors.primary : AppColors.mutedText,
+                size: 28,
               ),
             ],
           ),
-          Icon(
-            isCompleted ? Icons.check_circle_rounded : Icons.cancel_rounded,
-            color: isCompleted ? primaryColor : destructiveColor,
-            size: 28,
-          ),
-        ],
-      ),
-    );
-  }
-
-  // --- FLOATING NAV BAR ---
-  Widget _buildFloatingNavBar() {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 24, left: 24, right: 24),
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
-        decoration: BoxDecoration(
-          color: cardColor.withOpacity(0.95),
-          borderRadius: BorderRadius.circular(40),
-          border: Border.all(color: Colors.white.withOpacity(0.05)),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withOpacity(0.5),
-              blurRadius: 20,
-              offset: const Offset(0, 10),
-            ),
-          ],
-        ),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            GestureDetector(
-              onTap: () => Navigator.pop(context), // Goes back to MainScreen
-              child: Icon(Icons.home_rounded, color: mutedTextColor, size: 28),
-            ),
-            Icon(Icons.calendar_month_rounded, color: primaryColor, size: 32, shadows: [Shadow(color: primaryColor.withOpacity(0.6), blurRadius: 8)]),
-            Icon(Icons.bar_chart_rounded, color: mutedTextColor, size: 28),
-            Icon(Icons.settings_rounded, color: mutedTextColor, size: 28),
-          ],
         ),
       ),
     );
