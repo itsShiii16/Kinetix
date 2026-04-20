@@ -1,7 +1,10 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 import '../models/task_model.dart';
+import '../services/task_service.dart';
 import '../utils/app_colors.dart';
 import '../widgets/shared/app_bottom_nav_bar.dart';
 
@@ -18,152 +21,298 @@ class _StatisticsScreenState extends State<StatisticsScreen> {
   StatisticsView _selectedView = StatisticsView.weekly;
   late DateTime _focusedDate;
 
-  final List<TaskModel> _tasks = [
-    TaskModel(
-      id: '1',
-      title: 'Drink Water',
-      subtitle: 'Health goal',
-      category: 'Lifestyle',
-      type: 'progress',
-      current: 6,
-      total: 8,
-      isDone: false,
-      isPriority: true,
-      icon: Icons.water_drop_rounded,
-      color: const Color(0xFF56CCF2),
-    ),
-    TaskModel(
-      id: '2',
-      title: 'Walk',
-      subtitle: '45 mins',
-      category: 'Lifestyle',
-      type: 'simple',
-      isDone: true,
-      isPriority: true,
-      icon: Icons.directions_walk_rounded,
-      color: const Color(0xFFFFC857),
-    ),
-    TaskModel(
-      id: '3',
-      title: 'Complete Reading',
-      subtitle: 'Personal growth',
-      category: 'School',
-      type: 'simple',
-      isDone: true,
-      isPriority: true,
-      icon: Icons.menu_book_rounded,
-      color: const Color(0xFF4CD97B),
-    ),
-    TaskModel(
-      id: '4',
-      title: 'Stop Tea at Night',
-      subtitle: 'Habit control',
-      category: 'Lifestyle',
-      type: 'simple',
-      isDone: false,
-      isPriority: false,
-      icon: Icons.emoji_food_beverage_rounded,
-      color: const Color(0xFFFF9A62),
-    ),
-    TaskModel(
-      id: '5',
-      title: 'Prepare for Work',
-      subtitle: 'Morning setup',
-      category: 'Work',
-      type: 'simple',
-      isDone: false,
-      isPriority: false,
-      icon: Icons.work_outline_rounded,
-      color: const Color(0xFFFF6B6B),
-    ),
-    TaskModel(
-      id: '6',
-      title: 'Sleep before 11',
-      subtitle: 'Recovery',
-      category: 'Lifestyle',
-      type: 'simple',
-      isDone: false,
-      isPriority: false,
-      icon: Icons.nightlight_round,
-      color: const Color(0xFF8E7CFF),
-    ),
-    TaskModel(
-      id: '7',
-      title: 'Reply Emails',
-      subtitle: 'Inbox cleanup',
-      category: 'Work',
-      type: 'simple',
-      isDone: true,
-      isPriority: false,
-      icon: Icons.email_rounded,
-      color: const Color(0xFFFF9A62),
-    ),
-    TaskModel(
-      id: '8',
-      title: 'Prepare Dinner',
-      subtitle: 'Before 7PM',
-      category: 'Home',
-      type: 'simple',
-      isDone: false,
-      isPriority: false,
-      icon: Icons.restaurant_rounded,
-      color: const Color(0xFFFF8F5A),
-    ),
+  final TaskService _taskService = TaskService();
+  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+  final FirebaseAuth _auth = FirebaseAuth.instance;
+
+  final List<String> _categoryOrder = const [
+    'Lifestyle',
+    'School',
+    'Work',
+    'Home',
   ];
 
-  late Map<String, List<bool>> _categoryCompletionMap;
-
-  final Map<String, Color> _categoryColors = {
-    'Lifestyle': const Color(0xFF56CCF2),
-    'School': const Color(0xFF4CD97B),
-    'Work': const Color(0xFFFF9A62),
-    'Home': const Color(0xFF8E7CFF),
+  final Map<String, Color> _categoryColors = const {
+    'Lifestyle': Color(0xFF56CCF2),
+    'School': Color(0xFFB4A6FF),
+    'Work': Color(0xFFFF9A62),
+    'Home': Color(0xFF7EE6A2),
   };
 
   @override
   void initState() {
     super.initState();
     _focusedDate = DateTime.now();
+  }
 
-    _categoryCompletionMap = {
-      'Lifestyle': [false, true, true, false, true, false, false],
-      'School': [false, false, true, true, true, false, false],
-      'Work': [false, false, false, true, true, false, false],
-      'Home': [false, false, false, false, true, false, false],
+  String get _userId {
+    final user = _auth.currentUser;
+    if (user == null) {
+      throw Exception('User not logged in');
+    }
+    return user.uid;
+  }
+
+  Stream<QuerySnapshot<Map<String, dynamic>>> _logsStream() {
+    return _firestore
+        .collection('users')
+        .doc(_userId)
+        .collection('task_logs')
+        .snapshots();
+  }
+
+  String _dateKey(DateTime date) =>
+      "${date.year}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}";
+
+  DateTime _dateOnly(DateTime date) => DateTime(date.year, date.month, date.day);
+
+  String _weekdayLabel(DateTime date) {
+    switch (date.weekday) {
+      case DateTime.monday:
+        return 'M';
+      case DateTime.tuesday:
+        return 'T';
+      case DateTime.wednesday:
+        return 'W';
+      case DateTime.thursday:
+        return 'Th';
+      case DateTime.friday:
+        return 'F';
+      case DateTime.saturday:
+        return 'Sa';
+      case DateTime.sunday:
+        return 'Su';
+      default:
+        return '';
+    }
+  }
+
+  Map<String, bool> _buildLogMap(QuerySnapshot<Map<String, dynamic>> snapshot) {
+    final map = <String, bool>{};
+
+    for (final doc in snapshot.docs) {
+      final data = doc.data();
+      final taskId = data['taskId']?.toString();
+      final date = data['date']?.toString();
+      final isCompleted = data['isCompleted'] == true;
+
+      if (taskId != null && date != null) {
+        map['$date|$taskId'] = isCompleted;
+      }
+    }
+
+    return map;
+  }
+
+  List<String> _getColumnLabels(List<List<DateTime>> slots) {
+    switch (_selectedView) {
+      case StatisticsView.weekly:
+        return ['M', 'T', 'W', 'Th', 'F', 'Sa', 'Su'];
+      case StatisticsView.monthly:
+        return List.generate(slots.length, (index) => 'W${index + 1}');
+      case StatisticsView.yearly:
+        return ['J', 'F', 'M', 'A', 'M', 'J', 'J', 'A', 'S', 'O', 'N', 'D'];
+    }
+  }
+
+  List<List<DateTime>> _getSlots() {
+    switch (_selectedView) {
+      case StatisticsView.weekly:
+        final start = _startOfWeek(_focusedDate);
+        return List.generate(
+          7,
+          (index) => [_dateOnly(start.add(Duration(days: index)))],
+        );
+
+      case StatisticsView.monthly:
+        final firstDay = DateTime(_focusedDate.year, _focusedDate.month, 1);
+        final lastDay = DateTime(_focusedDate.year, _focusedDate.month + 1, 0);
+
+        final slots = <List<DateTime>>[];
+        DateTime cursor = firstDay;
+        List<DateTime> currentWeek = [];
+
+        while (!cursor.isAfter(lastDay)) {
+          currentWeek.add(_dateOnly(cursor));
+
+          if (cursor.weekday == DateTime.sunday) {
+            slots.add(List.from(currentWeek));
+            currentWeek.clear();
+          }
+
+          cursor = cursor.add(const Duration(days: 1));
+        }
+
+        if (currentWeek.isNotEmpty) {
+          slots.add(List.from(currentWeek));
+        }
+
+        return slots;
+
+      case StatisticsView.yearly:
+        return List.generate(12, (index) {
+          final firstDay = DateTime(_focusedDate.year, index + 1, 1);
+          final lastDay = DateTime(_focusedDate.year, index + 2, 0);
+
+          final dates = <DateTime>[];
+          DateTime cursor = firstDay;
+          while (!cursor.isAfter(lastDay)) {
+            dates.add(_dateOnly(cursor));
+            cursor = cursor.add(const Duration(days: 1));
+          }
+          return dates;
+        });
+    }
+  }
+
+  bool _taskScheduledOnDate(TaskModel task, DateTime date) {
+    if (task.isDeleted) return false;
+
+    if (task.repeatDays.isEmpty) {
+      return true;
+    }
+
+    return task.repeatDays.contains(_weekdayLabel(date));
+  }
+
+  Map<String, dynamic> _buildDisplayData(
+    List<TaskModel> allTasks,
+    Map<String, bool> logMap,
+  ) {
+    final slots = _getSlots();
+    final labels = _getColumnLabels(slots);
+
+    final activeTasks = allTasks.where((task) => !task.isDeleted).toList();
+    final rows = <String, List<bool>>{};
+    final categoryInstanceSummary = <String, Map<String, int>>{};
+
+    int totalScheduledInstances = 0;
+    int totalCompletedInstances = 0;
+
+    final categoriesToShow = _categoryOrder
+        .where((category) => activeTasks.any((task) => task.category == category))
+        .toList();
+
+    for (final category in categoriesToShow) {
+      final categoryTasks =
+          activeTasks.where((task) => task.category == category).toList();
+
+      final categoryRow = <bool>[];
+      int categoryScheduled = 0;
+      int categoryCompleted = 0;
+
+      for (final slotDates in slots) {
+        int slotScheduled = 0;
+        int slotCompleted = 0;
+
+        for (final date in slotDates) {
+          final dateKey = _dateKey(date);
+
+          for (final task in categoryTasks) {
+            if (_taskScheduledOnDate(task, date)) {
+              slotScheduled++;
+              if (logMap['$dateKey|${task.id}'] == true) {
+                slotCompleted++;
+              }
+            }
+          }
+        }
+
+        totalScheduledInstances += slotScheduled;
+        totalCompletedInstances += slotCompleted;
+        categoryScheduled += slotScheduled;
+        categoryCompleted += slotCompleted;
+
+        categoryRow.add(slotScheduled > 0 && slotCompleted == slotScheduled);
+      }
+
+      rows[category] = categoryRow;
+      categoryInstanceSummary[category] = {
+        'scheduled': categoryScheduled,
+        'completed': categoryCompleted,
+      };
+    }
+
+    return {
+      'labels': labels,
+      'rows': rows,
+      'totalScheduledInstances': totalScheduledInstances,
+      'totalCompletedInstances': totalCompletedInstances,
+      'categoryInstanceSummary': categoryInstanceSummary,
+      'groupCount': rows.length,
     };
   }
 
   @override
   Widget build(BuildContext context) {
-    final labels = _getColumnLabels();
-    final displayData = _getDisplayData();
-
     return Scaffold(
       backgroundColor: AppColors.bg,
       body: SafeArea(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.fromLTRB(24, 28, 24, 140),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                'Statistics',
-                style: GoogleFonts.poppins(
-                  fontSize: 32,
-                  fontWeight: FontWeight.w900,
-                  color: Colors.white,
+        child: StreamBuilder<List<TaskModel>>(
+          stream: _taskService.getActiveTasks(),
+          builder: (context, taskSnapshot) {
+            if (taskSnapshot.connectionState == ConnectionState.waiting) {
+              return const Center(child: CircularProgressIndicator());
+            }
+
+            if (taskSnapshot.hasError) {
+              return Center(
+                child: Text(
+                  'Failed to load tasks.',
+                  style: GoogleFonts.nunitoSans(color: Colors.white),
                 ),
-              ),
-              const SizedBox(height: 24),
-              _buildViewTabs(),
-              const SizedBox(height: 24),
-              _buildRangeSelector(),
-              const SizedBox(height: 24),
-              _buildSummaryCards(displayData),
-              const SizedBox(height: 24),
-              _buildGroupGrid(labels, displayData),
-            ],
-          ),
+              );
+            }
+
+            final tasks = taskSnapshot.data ?? [];
+
+            return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+              stream: _logsStream(),
+              builder: (context, logSnapshot) {
+                if (logSnapshot.connectionState == ConnectionState.waiting) {
+                  return const Center(child: CircularProgressIndicator());
+                }
+
+                if (logSnapshot.hasError) {
+                  return Center(
+                    child: Text(
+                      'Failed to load logs.',
+                      style: GoogleFonts.nunitoSans(color: Colors.white),
+                    ),
+                  );
+                }
+
+                final logMap = _buildLogMap(logSnapshot.data!);
+                final displayData = _buildDisplayData(tasks, logMap);
+                final labels = displayData['labels'] as List<String>;
+
+                return SingleChildScrollView(
+                  padding: const EdgeInsets.fromLTRB(24, 28, 24, 140),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Statistics',
+                        style: GoogleFonts.poppins(
+                          fontSize: 32,
+                          fontWeight: FontWeight.w900,
+                          color: Colors.white,
+                        ),
+                      ),
+                      const SizedBox(height: 24),
+                      _buildViewTabs(),
+                      const SizedBox(height: 24),
+                      _buildRangeSelector(),
+                      const SizedBox(height: 24),
+                      _buildSummaryCards(displayData),
+                      const SizedBox(height: 24),
+                      _buildGroupGrid(labels, displayData),
+                    ],
+                  ),
+                );
+              },
+            );
+          },
         ),
       ),
       bottomNavigationBar: const AppBottomNavBar(currentIndex: 2),
@@ -276,8 +425,10 @@ class _StatisticsScreenState extends State<StatisticsScreen> {
   }
 
   Widget _buildSummaryCards(Map<String, dynamic> displayData) {
-    final int totalCompletions = displayData['totalCompletions'] as int;
-    final int totalSlots = displayData['totalSlots'] as int;
+    final int totalCompletions =
+        displayData['totalCompletedInstances'] as int;
+    final int totalSlots =
+        displayData['totalScheduledInstances'] as int;
     final double rate = totalSlots == 0 ? 0 : totalCompletions / totalSlots;
 
     return Row(
@@ -286,7 +437,7 @@ class _StatisticsScreenState extends State<StatisticsScreen> {
           child: _buildSummaryCard(
             title: 'Completion Rate',
             value: '${(rate * 100).round()}%',
-            subtitle: 'Across all groups',
+            subtitle: 'Real DB activity',
             accent: AppColors.primary,
           ),
         ),
@@ -294,8 +445,8 @@ class _StatisticsScreenState extends State<StatisticsScreen> {
         Expanded(
           child: _buildSummaryCard(
             title: 'Groups Tracked',
-            value: '${displayData['rows'].length}',
-            subtitle: 'Lifestyle, School, Work, Home',
+            value: '${displayData['groupCount']}',
+            subtitle: 'From Firestore tasks',
             accent: AppColors.secondary,
           ),
         ),
@@ -356,7 +507,32 @@ class _StatisticsScreenState extends State<StatisticsScreen> {
   ) {
     final Map<String, List<bool>> rows =
         displayData['rows'] as Map<String, List<bool>>;
+    final Map<String, Map<String, int>> categorySummary =
+        (displayData['categoryInstanceSummary'] as Map<String, dynamic>).map(
+      (key, value) => MapEntry(key, Map<String, int>.from(value)),
+    );
+
     final categories = rows.keys.toList();
+
+    if (categories.isEmpty) {
+      return Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(24),
+        decoration: BoxDecoration(
+          color: AppColors.card,
+          borderRadius: BorderRadius.circular(24),
+        ),
+        child: Text(
+          'No tracked task groups yet.',
+          textAlign: TextAlign.center,
+          style: GoogleFonts.nunitoSans(
+            fontSize: 14,
+            fontWeight: FontWeight.w700,
+            color: AppColors.mutedText,
+          ),
+        ),
+      );
+    }
 
     return Container(
       padding: const EdgeInsets.all(18),
@@ -368,7 +544,7 @@ class _StatisticsScreenState extends State<StatisticsScreen> {
         children: [
           Row(
             children: [
-              const SizedBox(width: 110),
+              const SizedBox(width: 140),
               ...labels.map(
                 (label) => Expanded(
                   child: Center(
@@ -390,34 +566,50 @@ class _StatisticsScreenState extends State<StatisticsScreen> {
             final completions =
                 rows[category] ?? List.filled(labels.length, false);
             final accent = _categoryColors[category] ?? AppColors.primary;
+            final scheduled = categorySummary[category]?['scheduled'] ?? 0;
+            final completed = categorySummary[category]?['completed'] ?? 0;
 
             return Padding(
               padding: const EdgeInsets.only(bottom: 16),
               child: Row(
                 children: [
                   SizedBox(
-                    width: 110,
-                    child: Row(
+                    width: 140,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Container(
-                          width: 12,
-                          height: 12,
-                          decoration: BoxDecoration(
-                            color: accent,
-                            shape: BoxShape.circle,
-                          ),
-                        ),
-                        const SizedBox(width: 10),
-                        Expanded(
-                          child: Text(
-                            category,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: GoogleFonts.nunitoSans(
-                              fontSize: 14,
-                              fontWeight: FontWeight.w700,
-                              color: Colors.white,
+                        Row(
+                          children: [
+                            Container(
+                              width: 12,
+                              height: 12,
+                              decoration: BoxDecoration(
+                                color: accent,
+                                shape: BoxShape.circle,
+                              ),
                             ),
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: Text(
+                                category,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: GoogleFonts.nunitoSans(
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.w700,
+                                  color: Colors.white,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          '$completed / $scheduled',
+                          style: GoogleFonts.nunitoSans(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w700,
+                            color: AppColors.mutedText,
                           ),
                         ),
                       ],
@@ -450,55 +642,6 @@ class _StatisticsScreenState extends State<StatisticsScreen> {
         ],
       ),
     );
-  }
-
-  Map<String, dynamic> _getDisplayData() {
-    int slotCount;
-
-    switch (_selectedView) {
-      case StatisticsView.weekly:
-        slotCount = 7;
-        break;
-      case StatisticsView.monthly:
-        slotCount = 4;
-        break;
-      case StatisticsView.yearly:
-        slotCount = 12;
-        break;
-    }
-
-    final Map<String, List<bool>> rows = {};
-
-    for (final entry in _categoryCompletionMap.entries) {
-      final original = entry.value;
-      final generated = List.generate(
-        slotCount,
-        (index) => index < original.length ? original[index] : false,
-      );
-      rows[entry.key] = generated;
-    }
-
-    int totalCompletions = 0;
-    for (final values in rows.values) {
-      totalCompletions += values.where((v) => v).length;
-    }
-
-    return {
-      'rows': rows,
-      'totalCompletions': totalCompletions,
-      'totalSlots': rows.length * slotCount,
-    };
-  }
-
-  List<String> _getColumnLabels() {
-    switch (_selectedView) {
-      case StatisticsView.weekly:
-        return ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
-      case StatisticsView.monthly:
-        return ['W1', 'W2', 'W3', 'W4'];
-      case StatisticsView.yearly:
-        return ['J', 'F', 'M', 'A', 'M', 'J', 'J', 'A', 'S', 'O', 'N', 'D'];
-    }
   }
 
   void _goToPreviousRange() {
@@ -540,7 +683,7 @@ class _StatisticsScreenState extends State<StatisticsScreen> {
         final end = start.add(const Duration(days: 6));
         return '${_twoDigits(start.day)}/${_twoDigits(start.month)} - ${_twoDigits(end.day)}/${_twoDigits(end.month)}';
       case StatisticsView.monthly:
-        return _monthName(_focusedDate.month);
+        return '${_monthName(_focusedDate.month)} ${_focusedDate.year}';
       case StatisticsView.yearly:
         return '${_focusedDate.year}';
     }
@@ -548,11 +691,8 @@ class _StatisticsScreenState extends State<StatisticsScreen> {
 
   DateTime _startOfWeek(DateTime date) {
     final diff = date.weekday - DateTime.monday;
-    return DateTime(
-      date.year,
-      date.month,
-      date.day,
-    ).subtract(Duration(days: diff));
+    return DateTime(date.year, date.month, date.day)
+        .subtract(Duration(days: diff));
   }
 
   String _twoDigits(int value) => value.toString().padLeft(2, '0');
