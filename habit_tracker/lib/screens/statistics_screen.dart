@@ -87,6 +87,23 @@ class _StatisticsScreenState extends State<StatisticsScreen> {
     }
   }
 
+  DateTime? _parseStorageDate(String? value) {
+    if (value == null || value.trim().isEmpty) return null;
+
+    try {
+      final parts = value.split('-');
+      if (parts.length != 3) return null;
+
+      return DateTime(
+        int.parse(parts[0]),
+        int.parse(parts[1]),
+        int.parse(parts[2]),
+      );
+    } catch (_) {
+      return null;
+    }
+  }
+
   Map<String, bool> _buildLogMap(QuerySnapshot<Map<String, dynamic>> snapshot) {
     final map = <String, bool>{};
 
@@ -168,11 +185,23 @@ class _StatisticsScreenState extends State<StatisticsScreen> {
   bool _taskScheduledOnDate(TaskModel task, DateTime date) {
     if (task.isDeleted) return false;
 
+    final normalizedDate = _dateOnly(date);
+    final startDate = _parseStorageDate(task.startDate);
+    final endDate = _parseStorageDate(task.endDate);
+
+    if (startDate != null && normalizedDate.isBefore(_dateOnly(startDate))) {
+      return false;
+    }
+
+    if (endDate != null && normalizedDate.isAfter(_dateOnly(endDate))) {
+      return false;
+    }
+
     if (task.repeatDays.isEmpty) {
       return true;
     }
 
-    return task.repeatDays.contains(_weekdayLabel(date));
+    return task.repeatDays.contains(_weekdayLabel(normalizedDate));
   }
 
   Map<String, dynamic> _buildDisplayData(

@@ -81,6 +81,45 @@ class _CalendarScreenState extends State<CalendarScreen> {
     }
   }
 
+  DateTime? _parseStorageDate(String? value) {
+    if (value == null || value.trim().isEmpty) return null;
+
+    try {
+      final parts = value.split('-');
+      if (parts.length != 3) return null;
+
+      return DateTime(
+        int.parse(parts[0]),
+        int.parse(parts[1]),
+        int.parse(parts[2]),
+      );
+    } catch (_) {
+      return null;
+    }
+  }
+
+  bool _isTaskScheduledForDate(TaskModel task, DateTime date) {
+    final normalizedDate = _dateOnly(date);
+    final startDate = _parseStorageDate(task.startDate);
+    final endDate = _parseStorageDate(task.endDate);
+
+    if (startDate != null &&
+        normalizedDate.isBefore(_dateOnly(startDate))) {
+      return false;
+    }
+
+    if (endDate != null &&
+        normalizedDate.isAfter(_dateOnly(endDate))) {
+      return false;
+    }
+
+    if (task.repeatDays.isEmpty) {
+      return true;
+    }
+
+    return task.repeatDays.contains(_weekdayLabel(normalizedDate));
+  }
+
   List<DateTime?> _getCalendarDaysForMonth(DateTime month) {
     final firstDayOfMonth = DateTime(month.year, month.month, 1);
     final daysInMonth = DateTime(month.year, month.month + 1, 0).day;
@@ -121,12 +160,9 @@ class _CalendarScreenState extends State<CalendarScreen> {
   }
 
   List<TaskModel> _tasksForDate(List<TaskModel> tasks, DateTime date) {
-    final dayLabel = _weekdayLabel(date);
-
     return tasks.where((task) {
       if (task.isDeleted) return false;
-      if (task.repeatDays.isEmpty) return true;
-      return task.repeatDays.contains(dayLabel);
+      return _isTaskScheduledForDate(task, date);
     }).toList();
   }
 
@@ -267,24 +303,6 @@ class _CalendarScreenState extends State<CalendarScreen> {
     return '${months[date.month - 1]} ${date.day}, ${date.year}';
   }
 
-  String _formatLongDate(DateTime date) {
-    const months = [
-      'January',
-      'February',
-      'March',
-      'April',
-      'May',
-      'June',
-      'July',
-      'August',
-      'September',
-      'October',
-      'November',
-      'December',
-    ];
-    return '${months[date.month - 1]} ${date.day}, ${date.year}';
-  }
-
   @override
   Widget build(BuildContext context) {
     final currentMonthDates = _getCalendarDaysForMonth(_focusedMonth);
@@ -339,7 +357,12 @@ class _CalendarScreenState extends State<CalendarScreen> {
                     children: [
                       _buildHeader(currentStreak),
                       _buildMonthSelector(),
-                      _buildCalendarGrid(currentMonthDates, monthStreakDays, tasks, logMap),
+                      _buildCalendarGrid(
+                        currentMonthDates,
+                        monthStreakDays,
+                        tasks,
+                        logMap,
+                      ),
                       _buildActivitySection(tasks, logMap),
                     ],
                   ),
@@ -598,8 +621,8 @@ class _CalendarScreenState extends State<CalendarScreen> {
                                       ? BoxDecoration(
                                           shape: BoxShape.circle,
                                           border: Border.all(
-                                            color:
-                                                AppColors.secondary.withOpacity(0.6),
+                                            color: AppColors.secondary
+                                                .withOpacity(0.6),
                                           ),
                                         )
                                       : null,
@@ -627,7 +650,10 @@ class _CalendarScreenState extends State<CalendarScreen> {
     );
   }
 
-  Widget _buildActivitySection(List<TaskModel> allTasks, Map<String, bool> logMap) {
+  Widget _buildActivitySection(
+    List<TaskModel> allTasks,
+    Map<String, bool> logMap,
+  ) {
     final selectedTasks = _tasksForDate(allTasks, _selectedDate);
     final selectedKey = _dateKey(_selectedDate);
 

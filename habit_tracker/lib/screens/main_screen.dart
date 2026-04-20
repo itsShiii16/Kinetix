@@ -36,8 +36,72 @@ class _MainScreenState extends State<MainScreen> {
 
   String get selectedCategoryLabel => CategoryTabs.labelFor(_selectedTab);
 
+  DateTime _dateOnly(DateTime date) => DateTime(date.year, date.month, date.day);
+
+  DateTime? _parseStorageDate(String? value) {
+    if (value == null || value.trim().isEmpty) return null;
+
+    try {
+      final parts = value.split('-');
+      if (parts.length != 3) return null;
+
+      return DateTime(
+        int.parse(parts[0]),
+        int.parse(parts[1]),
+        int.parse(parts[2]),
+      );
+    } catch (_) {
+      return null;
+    }
+  }
+
+  String _weekdayLabel(DateTime date) {
+    switch (date.weekday) {
+      case DateTime.monday:
+        return 'M';
+      case DateTime.tuesday:
+        return 'T';
+      case DateTime.wednesday:
+        return 'W';
+      case DateTime.thursday:
+        return 'Th';
+      case DateTime.friday:
+        return 'F';
+      case DateTime.saturday:
+        return 'Sa';
+      case DateTime.sunday:
+        return 'Su';
+      default:
+        return '';
+    }
+  }
+
+  bool _isTaskScheduledForDate(TaskModel task, DateTime date) {
+    final normalizedDate = _dateOnly(date);
+    final startDate = _parseStorageDate(task.startDate);
+    final endDate = _parseStorageDate(task.endDate);
+
+    if (startDate != null && normalizedDate.isBefore(_dateOnly(startDate))) {
+      return false;
+    }
+
+    if (endDate != null && normalizedDate.isAfter(_dateOnly(endDate))) {
+      return false;
+    }
+
+    if (task.repeatDays.isEmpty) {
+      return true;
+    }
+
+    return task.repeatDays.contains(_weekdayLabel(normalizedDate));
+  }
+
   List<TaskModel> _filterTasks(List<TaskModel> tasks) {
-    List<TaskModel> filtered = List.from(tasks);
+    final today = _dateOnly(DateTime.now());
+
+    List<TaskModel> filtered = tasks
+        .where((task) => _isTaskScheduledForDate(task, today))
+        .toList();
 
     if (_selectedTab != TaskCategoryTab.all) {
       filtered = filtered
@@ -113,12 +177,19 @@ class _MainScreenState extends State<MainScreen> {
               );
             }
 
-            final tasks = snapshot.data ?? [];
-            final filteredTasks = _filterTasks(tasks);
-            final completedTasks = tasks.where((task) => task.isDone).length;
-            final totalTasks = tasks.length;
-            final priorityTasks =
-                tasks.where((task) => task.isPriority).toList();
+            final allTasks = snapshot.data ?? [];
+            final today = _dateOnly(DateTime.now());
+
+            final todayTasks = allTasks
+                .where((task) => _isTaskScheduledForDate(task, today))
+                .toList();
+
+            final filteredTasks = _filterTasks(allTasks);
+            final completedTasks = todayTasks.where((task) => task.isDone).length;
+            final totalTasks = todayTasks.length;
+            final priorityTasks = todayTasks
+                .where((task) => task.isPriority)
+                .toList();
 
             return CustomScrollView(
               physics: const BouncingScrollPhysics(),
@@ -328,7 +399,7 @@ class _MainScreenState extends State<MainScreen> {
         fontWeight: FontWeight.w700,
       ),
       decoration: InputDecoration(
-        hintText: 'Search tasks...',
+        hintText: 'Search today’s tasks...',
         hintStyle: TextStyle(color: AppColors.mutedText.withOpacity(0.7)),
         prefixIcon: Icon(Icons.search_rounded, color: AppColors.mutedText),
         suffixIcon: _searchQuery.isNotEmpty
@@ -365,7 +436,7 @@ class _MainScreenState extends State<MainScreen> {
       children: [
         Text(
           selectedCategoryLabel == 'All'
-              ? 'All Tasks'
+              ? 'Today’s Tasks'
               : '$selectedCategoryLabel Tasks',
           style: GoogleFonts.poppins(
             fontSize: 20,
@@ -399,7 +470,7 @@ class _MainScreenState extends State<MainScreen> {
           Icon(Icons.inbox_rounded, color: AppColors.mutedText, size: 34),
           const SizedBox(height: 12),
           Text(
-            'No tasks here yet',
+            'No tasks for today',
             style: GoogleFonts.poppins(
               fontSize: 18,
               fontWeight: FontWeight.w700,
@@ -409,8 +480,8 @@ class _MainScreenState extends State<MainScreen> {
           const SizedBox(height: 6),
           Text(
             selectedCategoryLabel == 'All'
-                ? 'Try adding a task to get started.'
-                : 'No $selectedCategoryLabel tasks found.',
+                ? 'Try adding a task scheduled for today.'
+                : 'No $selectedCategoryLabel tasks scheduled for today.',
             textAlign: TextAlign.center,
             style: GoogleFonts.nunitoSans(
               fontSize: 14,

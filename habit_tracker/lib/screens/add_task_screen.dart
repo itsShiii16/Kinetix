@@ -25,6 +25,9 @@ class _AddTaskScreenState extends State<AddTaskScreen> {
   bool _remindersEnabled = false;
   List<String> _reminders = [];
 
+  DateTime _startDate = DateTime.now();
+  DateTime? _endDate;
+
   final List<String> _categories = [
     'Lifestyle',
     'School',
@@ -42,6 +45,41 @@ class _AddTaskScreenState extends State<AddTaskScreen> {
         _repeatDays.add(day);
       }
     });
+  }
+
+  Future<void> _pickStartDate() async {
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: _startDate,
+      firstDate: DateTime(2023),
+      lastDate: DateTime(2100),
+    );
+
+    if (picked != null) {
+      setState(() {
+        _startDate = picked;
+
+        // ensure end date is not before start
+        if (_endDate != null && _endDate!.isBefore(_startDate)) {
+          _endDate = _startDate;
+        }
+      });
+    }
+  }
+
+  Future<void> _pickEndDate() async {
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: _endDate ?? _startDate,
+      firstDate: _startDate,
+      lastDate: DateTime(2100),
+    );
+
+    if (picked != null) {
+      setState(() {
+        _endDate = picked;
+      });
+    }
   }
 
   Future<void> _addReminder() async {
@@ -74,6 +112,8 @@ class _AddTaskScreenState extends State<AddTaskScreen> {
       repeatDays: _repeatDays,
       remindersEnabled: _remindersEnabled,
       reminders: _reminders,
+      startDate: _toStorageDate(_startDate),
+      endDate: _endDate != null ? _toStorageDate(_endDate!) : null,
       icon: Icons.task_alt,
       color: Colors.white,
     );
@@ -103,6 +143,15 @@ class _AddTaskScreenState extends State<AddTaskScreen> {
       ),
     );
   }
+
+  String _formatDate(DateTime date) {
+    return "${date.month}/${date.day}/${date.year}";
+  }
+  
+  String _toStorageDate(DateTime date) {
+  return "${date.year}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}";
+}
+
 
   @override
   Widget build(BuildContext context) {
@@ -145,6 +194,42 @@ class _AddTaskScreenState extends State<AddTaskScreen> {
                   () => setState(() => _selectedCategory = c),
                 );
               }).toList(),
+            ),
+
+            const SizedBox(height: 20),
+
+            const Text("Start Date"),
+            const SizedBox(height: 8),
+            GestureDetector(
+              onTap: _pickStartDate,
+              child: Container(
+                padding: const EdgeInsets.all(14),
+                decoration: BoxDecoration(
+                  color: AppColors.card,
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                child: Text(_formatDate(_startDate)),
+              ),
+            ),
+
+            const SizedBox(height: 16),
+
+            const Text("End Date (Optional)"),
+            const SizedBox(height: 8),
+            GestureDetector(
+              onTap: _pickEndDate,
+              child: Container(
+                padding: const EdgeInsets.all(14),
+                decoration: BoxDecoration(
+                  color: AppColors.card,
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                child: Text(
+                  _endDate == null
+                      ? "No end date"
+                      : _formatDate(_endDate!),
+                ),
+              ),
             ),
 
             const SizedBox(height: 20),

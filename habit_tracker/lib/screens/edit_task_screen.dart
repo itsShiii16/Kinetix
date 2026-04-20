@@ -28,6 +28,9 @@ class _EditTaskScreenState extends State<EditTaskScreen> {
   late bool _remindersEnabled;
   late List<String> _reminders;
 
+  late DateTime _startDate;
+  DateTime? _endDate;
+
   final List<String> _categories = [
     'Lifestyle',
     'School',
@@ -40,20 +43,75 @@ class _EditTaskScreenState extends State<EditTaskScreen> {
   @override
   void initState() {
     super.initState();
+
     _titleController = TextEditingController(text: widget.task.title);
     _subtitleController = TextEditingController(text: widget.task.subtitle);
+
     _selectedCategory = widget.task.category;
     _isPriority = widget.task.isPriority;
     _repeatDays = List<String>.from(widget.task.repeatDays);
     _remindersEnabled = widget.task.remindersEnabled;
     _reminders = List<String>.from(widget.task.reminders);
+
+    // 🔥 PARSE STRING → DATETIME
+    _startDate = _parseDate(widget.task.startDate) ?? DateTime.now();
+    _endDate = _parseDate(widget.task.endDate);
   }
 
-  @override
-  void dispose() {
-    _titleController.dispose();
-    _subtitleController.dispose();
-    super.dispose();
+  DateTime? _parseDate(String? date) {
+    if (date == null) return null;
+    try {
+      final parts = date.split('-');
+      return DateTime(
+        int.parse(parts[0]),
+        int.parse(parts[1]),
+        int.parse(parts[2]),
+      );
+    } catch (_) {
+      return null;
+    }
+  }
+
+  String _toStorageDate(DateTime date) {
+    return "${date.year}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}";
+  }
+
+  String _formatDate(DateTime date) {
+    return "${date.month}/${date.day}/${date.year}";
+  }
+
+  Future<void> _pickStartDate() async {
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: _startDate,
+      firstDate: DateTime(2023),
+      lastDate: DateTime(2100),
+    );
+
+    if (picked != null) {
+      setState(() {
+        _startDate = picked;
+
+        if (_endDate != null && _endDate!.isBefore(_startDate)) {
+          _endDate = _startDate;
+        }
+      });
+    }
+  }
+
+  Future<void> _pickEndDate() async {
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: _endDate ?? _startDate,
+      firstDate: _startDate,
+      lastDate: DateTime(2100),
+    );
+
+    if (picked != null) {
+      setState(() {
+        _endDate = picked;
+      });
+    }
   }
 
   void _toggleDay(String day) {
@@ -66,25 +124,7 @@ class _EditTaskScreenState extends State<EditTaskScreen> {
     });
   }
 
-  Future<void> _addReminder() async {
-    final time = await showTimePicker(
-      context: context,
-      initialTime: TimeOfDay.now(),
-    );
-
-    if (time != null) {
-      final formatted =
-          "${time.hourOfPeriod == 0 ? 12 : time.hourOfPeriod}:${time.minute.toString().padLeft(2, '0')} ${time.period == DayPeriod.am ? 'AM' : 'PM'}";
-
-      setState(() {
-        _reminders.add(formatted);
-      });
-    }
-  }
-
   Future<void> _saveTask() async {
-    if (_titleController.text.trim().isEmpty) return;
-
     final updatedTask = widget.task.copyWith(
       title: _titleController.text.trim(),
       subtitle: _subtitleController.text.trim(),
@@ -93,96 +133,14 @@ class _EditTaskScreenState extends State<EditTaskScreen> {
       repeatDays: _repeatDays,
       remindersEnabled: _remindersEnabled,
       reminders: _reminders,
+      startDate: _toStorageDate(_startDate),
+      endDate: _endDate != null ? _toStorageDate(_endDate!) : null,
     );
 
     await _taskService.updateTask(updatedTask);
 
     if (!mounted) return;
     Navigator.pop(context);
-  }
-
-  Future<void> _softDeleteTask() async {
-    await _taskService.softDeleteTask(widget.task.id);
-
-    if (!mounted) return;
-
-    Navigator.pop(context);
-
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: const Text('Task moved to Recently Deleted'),
-        action: SnackBarAction(
-          label: 'Undo',
-          onPressed: () {
-            _taskService.restoreTask(widget.task.id);
-          },
-        ),
-      ),
-    );
-  }
-
-  Future<void> _confirmDelete() async {
-    final shouldDelete = await showModalBottomSheet<bool>(
-      context: context,
-      backgroundColor: AppColors.card,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-      ),
-      builder: (context) {
-        return SafeArea(
-          child: Padding(
-            padding: const EdgeInsets.all(24),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const Text(
-                  'Move task to Recently Deleted?',
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontSize: 20,
-                    fontWeight: FontWeight.w700,
-                  ),
-                  textAlign: TextAlign.center,
-                ),
-                const SizedBox(height: 10),
-                Text(
-                  'You can restore it later from Archive.',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(
-                    color: AppColors.mutedText,
-                    fontSize: 14,
-                  ),
-                ),
-                const SizedBox(height: 20),
-                SizedBox(
-                  width: double.infinity,
-                  child: ElevatedButton(
-                    onPressed: () => Navigator.pop(context, true),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: AppColors.primary,
-                      foregroundColor: AppColors.bg,
-                    ),
-                    child: const Text('Move to Archive'),
-                  ),
-                ),
-                const SizedBox(height: 10),
-                TextButton(
-                  onPressed: () => Navigator.pop(context, false),
-                  child: Text(
-                    'Cancel',
-                    style: TextStyle(color: AppColors.mutedText),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        );
-      },
-    );
-
-    if (shouldDelete == true) {
-      await _softDeleteTask();
-    }
   }
 
   Widget _chip(String label, bool selected, VoidCallback onTap) {
@@ -193,9 +151,6 @@ class _EditTaskScreenState extends State<EditTaskScreen> {
         decoration: BoxDecoration(
           color: selected ? AppColors.primary : AppColors.card,
           borderRadius: BorderRadius.circular(20),
-          border: Border.all(
-            color: selected ? AppColors.primary : AppColors.muted,
-          ),
         ),
         child: Text(
           label,
@@ -208,172 +163,64 @@ class _EditTaskScreenState extends State<EditTaskScreen> {
     );
   }
 
-  Widget _sectionTitle(String text) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 8),
-      child: Text(
-        text,
-        style: TextStyle(
-          color: AppColors.mutedText,
-          fontWeight: FontWeight.w700,
-          fontSize: 13,
-        ),
-      ),
-    );
-  }
-
-  Widget _inputField({
-    required TextEditingController controller,
-    required String hintText,
-  }) {
-    return TextField(
-      controller: controller,
-      style: const TextStyle(color: Colors.white),
-      decoration: InputDecoration(
-        hintText: hintText,
-        hintStyle: TextStyle(color: AppColors.mutedText.withOpacity(0.7)),
-        filled: true,
-        fillColor: AppColors.card,
-        border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(18),
-          borderSide: BorderSide.none,
-        ),
-      ),
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: AppColors.bg,
       appBar: AppBar(
         backgroundColor: AppColors.bg,
-        foregroundColor: Colors.white,
         title: const Text('Edit Task'),
-        actions: [
-          IconButton(
-            onPressed: _confirmDelete,
-            icon: const Icon(Icons.delete_outline_rounded),
-          ),
-        ],
       ),
       body: SingleChildScrollView(
-        padding: const EdgeInsets.fromLTRB(24, 12, 24, 32),
+        padding: const EdgeInsets.all(24),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            _sectionTitle('TASK NAME'),
-            _inputField(
-              controller: _titleController,
-              hintText: 'Enter task name',
-            ),
-            const SizedBox(height: 18),
-            _sectionTitle('DESCRIPTION'),
-            _inputField(
-              controller: _subtitleController,
-              hintText: 'Optional description',
-            ),
-            const SizedBox(height: 18),
-            _sectionTitle('GROUP'),
-            Wrap(
-              spacing: 10,
-              runSpacing: 10,
-              children: _categories.map((category) {
-                return _chip(
-                  category,
-                  _selectedCategory == category,
-                  () => setState(() => _selectedCategory = category),
-                );
-              }).toList(),
-            ),
-            const SizedBox(height: 18),
-            _sectionTitle('REPEAT ON'),
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: _days.map((day) {
-                return _chip(
-                  day,
-                  _repeatDays.contains(day),
-                  () => _toggleDay(day),
-                );
-              }).toList(),
-            ),
-            const SizedBox(height: 18),
-            Row(
-              children: [
-                const Expanded(
-                  child: Text(
-                    'Priority',
-                    style: TextStyle(color: Colors.white, fontSize: 16),
-                  ),
-                ),
-                Switch(
-                  value: _isPriority,
-                  activeColor: AppColors.primary,
-                  onChanged: (value) {
-                    setState(() => _isPriority = value);
-                  },
-                ),
-              ],
-            ),
-            const SizedBox(height: 8),
-            Row(
-              children: [
-                const Expanded(
-                  child: Text(
-                    'Reminders',
-                    style: TextStyle(color: Colors.white, fontSize: 16),
-                  ),
-                ),
-                Switch(
-                  value: _remindersEnabled,
-                  activeColor: AppColors.primary,
-                  onChanged: (value) {
-                    setState(() => _remindersEnabled = value);
-                  },
-                ),
-              ],
-            ),
-            if (_remindersEnabled) ...[
-              const SizedBox(height: 10),
-              Wrap(
-                spacing: 8,
-                runSpacing: 8,
-                children: _reminders.asMap().entries.map((entry) {
-                  final index = entry.key;
-                  final reminder = entry.value;
+            const Text("Task Name"),
+            TextField(controller: _titleController),
 
-                  return Chip(
-                    label: Text(reminder),
-                    deleteIcon: const Icon(Icons.close, size: 18),
-                    onDeleted: () {
-                      setState(() {
-                        _reminders.removeAt(index);
-                      });
-                    },
-                  );
-                }).toList(),
-              ),
-              const SizedBox(height: 10),
-              TextButton(
-                onPressed: _addReminder,
-                child: const Text('+ Add Reminder'),
-              ),
-            ],
-            const SizedBox(height: 28),
-            SizedBox(
-              width: double.infinity,
-              child: ElevatedButton(
-                onPressed: _saveTask,
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: AppColors.primary,
-                  foregroundColor: AppColors.bg,
-                  padding: const EdgeInsets.symmetric(vertical: 16),
-                ),
-                child: const Text('Save Changes'),
+            const SizedBox(height: 16),
+
+            const Text("Description"),
+            TextField(controller: _subtitleController),
+
+            const SizedBox(height: 16),
+
+            const Text("Start Date"),
+            GestureDetector(
+              onTap: _pickStartDate,
+              child: Text(_formatDate(_startDate)),
+            ),
+
+            const SizedBox(height: 16),
+
+            const Text("End Date"),
+            GestureDetector(
+              onTap: _pickEndDate,
+              child: Text(
+                _endDate == null ? "No end date" : _formatDate(_endDate!),
               ),
             ),
+
+            const SizedBox(height: 16),
+
+            const Text("Repeat"),
+            Wrap(
+              children: _days.map((d) {
+                return _chip(
+                  d,
+                  _repeatDays.contains(d),
+                  () => _toggleDay(d),
+                );
+              }).toList(),
+            ),
+
+            const SizedBox(height: 20),
+
+            ElevatedButton(
+              onPressed: _saveTask,
+              child: const Text("Save"),
+            )
           ],
         ),
       ),
