@@ -1,6 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 import '../models/task_model.dart';
@@ -408,33 +409,40 @@ class _CalendarScreenState extends State<CalendarScreen> {
               ),
             ],
           ),
-          Material(
-            color: Colors.transparent,
-            child: InkWell(
-              borderRadius: BorderRadius.circular(25),
-              onTap: () {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (_) => const AddTaskScreen(),
-                  ),
-                );
-              },
-              child: Container(
-                width: 50,
-                height: 50,
-                decoration: BoxDecoration(
-                  color: AppColors.primary,
-                  shape: BoxShape.circle,
-                  boxShadow: [
-                    BoxShadow(
-                      color: AppColors.primary.withOpacity(0.4),
-                      blurRadius: 15,
-                      spreadRadius: 2,
+          Hero(
+            tag: 'add_task_fab',
+            createRectTween: (begin, end) {
+              return MaterialRectCenterArcTween(begin: begin, end: end);
+            },
+            child: Material(
+              color: Colors.transparent,
+              child: InkWell(
+                borderRadius: BorderRadius.circular(25),
+                onTap: () {
+                  HapticFeedback.lightImpact();
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => const AddTaskScreen(),
                     ),
-                  ],
+                  );
+                },
+                child: Container(
+                  width: 50,
+                  height: 50,
+                  decoration: BoxDecoration(
+                    color: AppColors.primary,
+                    shape: BoxShape.circle,
+                    boxShadow: [
+                      BoxShadow(
+                        color: AppColors.primary.withOpacity(0.4),
+                        blurRadius: 15,
+                        spreadRadius: 2,
+                      ),
+                    ],
+                  ),
+                  child: Icon(Icons.add_rounded, color: AppColors.bg, size: 32),
                 ),
-                child: Icon(Icons.add_rounded, color: AppColors.bg, size: 32),
               ),
             ),
           ),
@@ -581,62 +589,67 @@ class _CalendarScreenState extends State<CalendarScreen> {
                   }
 
                   return Expanded(
-                    child: GestureDetector(
-                      onTap: () {
-                        setState(() {
-                          _selectedDate = normalizedDate;
-                        });
-                      },
-                      child: Container(
-                        height: 48,
-                        color: Colors.transparent,
-                        child: Center(
-                          child: isSelected
-                              ? Container(
-                                  width: 34,
-                                  height: 34,
-                                  decoration: BoxDecoration(
-                                    color: AppColors.primary,
-                                    shape: BoxShape.circle,
-                                    border: Border.all(
-                                      color: AppColors.primary.withOpacity(0.3),
-                                      width: 4,
+                    child: Material(
+                      color: Colors.transparent,
+                      child: InkWell(
+                        onTap: () {
+                          HapticFeedback.lightImpact();
+                          setState(() {
+                            _selectedDate = normalizedDate;
+                          });
+                        },
+                        borderRadius: BorderRadius.circular(17),
+                        child: Container(
+                          height: 48,
+                          color: Colors.transparent,
+                          child: Center(
+                            child: isSelected
+                                ? Container(
+                                    width: 34,
+                                    height: 34,
+                                    decoration: BoxDecoration(
+                                      color: AppColors.primary,
+                                      shape: BoxShape.circle,
+                                      border: Border.all(
+                                        color: AppColors.primary.withOpacity(0.3),
+                                        width: 4,
+                                      ),
                                     ),
-                                  ),
-                                  child: Center(
-                                    child: Text(
-                                      '${normalizedDate.day}',
-                                      style: GoogleFonts.nunitoSans(
-                                        fontSize: 14,
-                                        fontWeight: FontWeight.w900,
-                                        color: AppColors.bg,
+                                    child: Center(
+                                      child: Text(
+                                        '${normalizedDate.day}',
+                                        style: GoogleFonts.nunitoSans(
+                                          fontSize: 14,
+                                          fontWeight: FontWeight.w900,
+                                          color: AppColors.bg,
+                                        ),
+                                      ),
+                                    ),
+                                  )
+                                : Container(
+                                    width: 34,
+                                    height: 34,
+                                    decoration: isToday
+                                        ? BoxDecoration(
+                                            shape: BoxShape.circle,
+                                            border: Border.all(
+                                              color: AppColors.secondary
+                                                  .withOpacity(0.6),
+                                            ),
+                                          )
+                                        : null,
+                                    child: Center(
+                                      child: Text(
+                                        '${normalizedDate.day}',
+                                        style: GoogleFonts.nunitoSans(
+                                          fontSize: 16,
+                                          fontWeight: fontWeight,
+                                          color: textColor,
+                                        ),
                                       ),
                                     ),
                                   ),
-                                )
-                              : Container(
-                                  width: 34,
-                                  height: 34,
-                                  decoration: isToday
-                                      ? BoxDecoration(
-                                          shape: BoxShape.circle,
-                                          border: Border.all(
-                                            color: AppColors.secondary
-                                                .withOpacity(0.6),
-                                          ),
-                                        )
-                                      : null,
-                                  child: Center(
-                                    child: Text(
-                                      '${normalizedDate.day}',
-                                      style: GoogleFonts.nunitoSans(
-                                        fontSize: 16,
-                                        fontWeight: fontWeight,
-                                        color: textColor,
-                                      ),
-                                    ),
-                                  ),
-                                ),
+                          ),
                         ),
                       ),
                     ),
