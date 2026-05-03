@@ -54,73 +54,123 @@ class PriorityTaskGrid extends StatelessWidget {
           trailingText = isDone ? 'Done' : 'Today';
         }
 
-        return GestureDetector(
-          onTap: onTaskTap(task),
-          child: Container(
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: const Color(0xFF2A2A2C),
-              borderRadius: BorderRadius.circular(22),
-              border: Border.all(color: accent.withOpacity(0.28)),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withOpacity(0.12),
-                  blurRadius: 12,
-                ),
-              ],
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    Container(
-                      width: 34,
-                      height: 34,
-                      decoration: BoxDecoration(
-                        color: accent.withOpacity(0.16),
-                        borderRadius: BorderRadius.circular(12),
+        return Material(
+          color: Colors.transparent,
+          child: InkWell(
+            onTap: onTaskTap(task),
+            borderRadius: BorderRadius.circular(22),
+            child: Ink(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: const Color(0xFF2A2A2C),
+                borderRadius: BorderRadius.circular(22),
+                border: Border.all(color: accent.withOpacity(0.28)),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.12),
+                    blurRadius: 12,
+                  ),
+                ],
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Container(
+                        width: 34,
+                        height: 34,
+                        decoration: BoxDecoration(
+                          color: accent.withOpacity(0.16),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Icon(
+                          task.icon,
+                          color: accent,
+                          size: 18,
+                        ),
                       ),
-                      child: Icon(
-                        task.icon,
+                      const Spacer(),
+                      Icon(
+                        isDone
+                            ? Icons.check_circle_rounded
+                            : Icons.radio_button_unchecked_rounded,
+                        color: isDone
+                            ? const Color(0xFFD4FF00)
+                            : const Color(0xFF8E8E93),
+                        size: 22,
+                      ),
+                    ],
+                  ),
+                  const Spacer(),
+                  Text(
+                    task.title,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: GoogleFonts.poppins(
+                      fontSize: 15,
+                      fontWeight: FontWeight.w700,
+                      color: isDone ? const Color(0xFF8E8E93) : Colors.white,
+                      decoration: isDone ? TextDecoration.lineThrough : null,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  if (task.type == 'progress')
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          trailingText,
+                          style: GoogleFonts.nunitoSans(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w800,
+                            color: accent,
+                          ),
+                        ),
+                        const SizedBox(height: 6),
+                        Container(
+                          width: double.infinity,
+                          height: 4,
+                          decoration: BoxDecoration(
+                            color: Colors.black.withOpacity(0.2),
+                            borderRadius: BorderRadius.circular(2),
+                          ),
+                          child: Stack(
+                            children: [
+                              AnimatedContainer(
+                                duration: const Duration(milliseconds: 450),
+                                curve: Curves.easeOutCubic,
+                                width: (MediaQuery.of(context).size.width / 2 -
+                                        64) *
+                                    ((task.current ?? 0) /
+                                        (task.total ?? 1).clamp(1, 999)),
+                                decoration: BoxDecoration(
+                                  color: accent,
+                                  borderRadius: BorderRadius.circular(2),
+                                  boxShadow: [
+                                    BoxShadow(
+                                      color: accent.withOpacity(0.4),
+                                      blurRadius: 4,
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    )
+                  else
+                    Text(
+                      trailingText,
+                      style: GoogleFonts.nunitoSans(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w800,
                         color: accent,
-                        size: 18,
                       ),
                     ),
-                    const Spacer(),
-                    Icon(
-                      isDone
-                          ? Icons.check_circle_rounded
-                          : Icons.radio_button_unchecked_rounded,
-                      color: isDone
-                          ? const Color(0xFFD4FF00)
-                          : const Color(0xFF8E8E93),
-                      size: 22,
-                    ),
-                  ],
-                ),
-                const Spacer(),
-                Text(
-                  task.title,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: GoogleFonts.poppins(
-                    fontSize: 15,
-                    fontWeight: FontWeight.w700,
-                    color: isDone ? const Color(0xFF8E8E93) : Colors.white,
-                    decoration: isDone ? TextDecoration.lineThrough : null,
-                  ),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  trailingText,
-                  style: GoogleFonts.nunitoSans(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w800,
-                    color: accent,
-                  ),
-                ),
-              ],
+                ],
+              ),
             ),
           ),
         );

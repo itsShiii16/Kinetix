@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 import '../models/task_model.dart';
@@ -126,6 +127,7 @@ class _MainScreenState extends State<MainScreen> {
   }
 
   Future<void> _toggleTask(TaskModel task) async {
+    HapticFeedback.lightImpact();
     await _taskService.toggleTaskCompletion(task);
   }
 

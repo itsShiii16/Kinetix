@@ -132,13 +132,48 @@ class TaskCard extends StatelessWidget {
               ),
               const SizedBox(width: 10),
               if (task.type == 'progress' && !isDone)
-                Text(
-                  '${task.current ?? 0}/${task.total ?? 0}',
-                  style: GoogleFonts.poppins(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w800,
-                    color: accent,
-                  ),
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    Text(
+                      '${task.current ?? 0}/${task.total ?? 0}',
+                      style: GoogleFonts.poppins(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w800,
+                        color: accent,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Container(
+                      width: 60,
+                      height: 4,
+                      decoration: BoxDecoration(
+                        color: AppColors.muted,
+                        borderRadius: BorderRadius.circular(2),
+                      ),
+                      child: Stack(
+                        children: [
+                          AnimatedContainer(
+                            duration: const Duration(milliseconds: 450),
+                            curve: Curves.easeOutCubic,
+                            width: 60 *
+                                ((task.current ?? 0) /
+                                    (task.total ?? 1).clamp(1, 999)),
+                            decoration: BoxDecoration(
+                              color: accent,
+                              borderRadius: BorderRadius.circular(2),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: accent.withOpacity(0.4),
+                                  blurRadius: 4,
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
                 )
               else
                 Icon(
